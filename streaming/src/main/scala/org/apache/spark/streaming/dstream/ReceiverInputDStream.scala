@@ -49,7 +49,7 @@ abstract class ReceiverInputDStream[T: ClassTag](@transient ssc_ : StreamingCont
    */
   def getReceiver(): Receiver[T]
 
-  // Nothing to start or stop as both taken care of by the ReceiverInputTracker.
+  // Nothing to start or stop as both taken care of by the ReceiverTracker.
   def start() {}
 
   def stop() {}
