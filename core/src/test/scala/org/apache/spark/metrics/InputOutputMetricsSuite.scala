@@ -21,44 +21,42 @@ import java.io.{File, FileWriter, PrintWriter}
 
 import scala.collection.mutable.ArrayBuffer
 
-import org.scalatest.FunSuite
-
+import org.apache.commons.lang3.RandomUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.io.{LongWritable, Text}
-import org.apache.hadoop.mapred.{FileSplit => OldFileSplit, InputSplit => OldInputSplit, JobConf,
-  LineRecordReader => OldLineRecordReader, RecordReader => OldRecordReader, Reporter,
-  TextInputFormat => OldTextInputFormat}
-import org.apache.hadoop.mapred.lib.{CombineFileInputFormat => OldCombineFileInputFormat,
-  CombineFileSplit => OldCombineFileSplit, CombineFileRecordReader => OldCombineFileRecordReader}
-import org.apache.hadoop.mapreduce.{InputSplit => NewInputSplit, RecordReader => NewRecordReader,
-  TaskAttemptContext}
-import org.apache.hadoop.mapreduce.lib.input.{CombineFileInputFormat => NewCombineFileInputFormat,
-  CombineFileRecordReader => NewCombineFileRecordReader, CombineFileSplit => NewCombineFileSplit,
-  FileSplit => NewFileSplit, TextInputFormat => NewTextInputFormat}
+import org.apache.hadoop.mapred.{FileSplit => OldFileSplit, InputSplit => OldInputSplit, JobConf, LineRecordReader => OldLineRecordReader, RecordReader => OldRecordReader, Reporter, TextInputFormat => OldTextInputFormat}
+import org.apache.hadoop.mapred.lib.{CombineFileInputFormat => OldCombineFileInputFormat, CombineFileRecordReader => OldCombineFileRecordReader, CombineFileSplit => OldCombineFileSplit}
+import org.apache.hadoop.mapreduce.{InputSplit => NewInputSplit, RecordReader => NewRecordReader, TaskAttemptContext}
+import org.apache.hadoop.mapreduce.lib.input.{CombineFileInputFormat => NewCombineFileInputFormat, CombineFileRecordReader => NewCombineFileRecordReader, CombineFileSplit => NewCombineFileSplit, FileSplit => NewFileSplit, TextInputFormat => NewTextInputFormat}
+import org.apache.hadoop.mapreduce.lib.output.{TextOutputFormat => NewTextOutputFormat}
+import org.scalatest.BeforeAndAfter
 
-import org.apache.spark.SharedSparkContext
+import org.apache.spark.{SharedSparkContext, SparkFunSuite}
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.scheduler.{SparkListener, SparkListenerTaskEnd}
 import org.apache.spark.util.Utils
 
-class InputOutputMetricsSuite extends FunSuite with SharedSparkContext {
+class InputOutputMetricsSuite extends SparkFunSuite with SharedSparkContext
+  with BeforeAndAfter {
 
   @transient var tmpDir: File = _
   @transient var tmpFile: File = _
   @transient var tmpFilePath: String = _
+  @transient val numRecords: Int = 100000
+  @transient val numBuckets: Int = 10
 
-  override def beforeAll() {
-    super.beforeAll()
-
+  before {
     tmpDir = Utils.createTempDir()
     val testTempDir = new File(tmpDir, "test")
     testTempDir.mkdir()
 
     tmpFile = new File(testTempDir, getClass.getSimpleName + ".txt")
     val pw = new PrintWriter(new FileWriter(tmpFile))
-    for (x <- 1 to 1000000) {
-      pw.println("s")
+    for (x <- 1 to numRecords) {
+      // scalastyle:off println
+      pw.println(RandomUtils.nextInt(0, numBuckets))
+      // scalastyle:on println
     }
     pw.close()
 
@@ -66,8 +64,7 @@ class InputOutputMetricsSuite extends FunSuite with SharedSparkContext {
     tmpFilePath = "file://" + tmpFile.getAbsolutePath
   }
 
-  override def afterAll() {
-    super.afterAll()
+  after {
     Utils.deleteRecursively(tmpDir)
   }
 
@@ -95,43 +92,9 @@ class InputOutputMetricsSuite extends FunSuite with SharedSparkContext {
       rdd.coalesce(4).count()
     }
 
-    // for count and coelesce, the same bytes should be read.
+    // for count and coalesce, the same bytes should be read.
     assert(bytesRead != 0)
     assert(bytesRead2 == bytesRead)
-  }
-
-  /**
-   * This checks the situation where we have interleaved reads from
-   * different sources. Currently, we only accumulate fron the first
-   * read method we find in the task. This test uses cartesian to create
-   * the interleaved reads.
-   *
-   * Once https://issues.apache.org/jira/browse/SPARK-5225 is fixed
-   * this test should break.
-   */
-  test("input metrics with mixed read method") {
-    // prime the cache manager
-    val numPartitions = 2
-    val rdd = sc.parallelize(1 to 100, numPartitions).cache()
-    rdd.collect()
-
-    val rdd2 = sc.textFile(tmpFilePath, numPartitions)
-
-    val bytesRead = runAndReturnBytesRead {
-      rdd.count()
-    }
-    val bytesRead2 = runAndReturnBytesRead {
-      rdd2.count()
-    }
-
-    val cartRead = runAndReturnBytesRead {
-      rdd.cartesian(rdd2).count()
-    }
-
-    assert(cartRead != 0)
-    assert(bytesRead != 0)
-    // We read from the first rdd of the cartesian once per partition.
-    assert(cartRead == bytesRead * numPartitions)
   }
 
   test("input metrics for new Hadoop API with coalesce") {
@@ -155,6 +118,81 @@ class InputOutputMetricsSuite extends FunSuite with SharedSparkContext {
     assert(bytesRead >= tmpFile.length())
   }
 
+  test("input metrics on records read - simple") {
+    val records = runAndReturnRecordsRead {
+      sc.textFile(tmpFilePath, 4).count()
+    }
+    assert(records == numRecords)
+  }
+
+  test("input metrics on records read - more stages") {
+    val records = runAndReturnRecordsRead {
+      sc.textFile(tmpFilePath, 4)
+        .map(key => (key.length, 1))
+        .reduceByKey(_ + _)
+        .count()
+    }
+    assert(records == numRecords)
+  }
+
+  test("input metrics on records - New Hadoop API") {
+    val records = runAndReturnRecordsRead {
+      sc.newAPIHadoopFile(tmpFilePath, classOf[NewTextInputFormat], classOf[LongWritable],
+        classOf[Text]).count()
+    }
+    assert(records == numRecords)
+  }
+
+  test("input metrics on records read with cache") {
+    // prime the cache manager
+    val rdd = sc.textFile(tmpFilePath, 4).cache()
+    rdd.collect()
+
+    val records = runAndReturnRecordsRead {
+      rdd.count()
+    }
+
+    assert(records == numRecords)
+  }
+
+  /**
+   * Tests the metrics from end to end.
+   * 1) reading a hadoop file
+   * 2) shuffle and writing to a hadoop file.
+   * 3) writing to hadoop file.
+   */
+  test("input read/write and shuffle read/write metrics all line up") {
+    var inputRead = 0L
+    var outputWritten = 0L
+    var shuffleRead = 0L
+    var shuffleWritten = 0L
+    sc.addSparkListener(new SparkListener() {
+      override def onTaskEnd(taskEnd: SparkListenerTaskEnd) {
+        val metrics = taskEnd.taskMetrics
+        inputRead += metrics.inputMetrics.recordsRead
+        outputWritten += metrics.outputMetrics.recordsWritten
+        shuffleRead += metrics.shuffleReadMetrics.recordsRead
+        shuffleWritten += metrics.shuffleWriteMetrics.recordsWritten
+      }
+    })
+
+    val tmpFile = new File(tmpDir, getClass.getSimpleName)
+
+    sc.textFile(tmpFilePath, 4)
+      .map(key => (key, 1))
+      .reduceByKey(_ + _)
+      .saveAsTextFile("file://" + tmpFile.getAbsolutePath)
+
+    sc.listenerBus.waitUntilEmpty(500)
+    assert(inputRead == numRecords)
+
+    // Only supported on newer Hadoop
+    if (SparkHadoopUtil.get.getFSBytesWrittenOnThreadCallback().isDefined) {
+      assert(outputWritten == numBuckets)
+    }
+    assert(shuffleRead == shuffleWritten)
+  }
+
   test("input metrics with interleaved reads") {
     val numPartitions = 2
     val cartVector = 0 to 9
@@ -167,7 +205,7 @@ class InputOutputMetricsSuite extends FunSuite with SharedSparkContext {
 
     val tmpRdd = sc.textFile(tmpFilePath, numPartitions)
 
-    val firstSize= runAndReturnBytesRead {
+    val firstSize = runAndReturnBytesRead {
       aRdd.count()
     }
     val secondSize = runAndReturnBytesRead {
@@ -193,18 +231,61 @@ class InputOutputMetricsSuite extends FunSuite with SharedSparkContext {
     assert(cartesianBytes == firstSize * numPartitions + (cartVector.length  * secondSize))
   }
 
-  private def runAndReturnBytesRead(job : => Unit): Long = {
-    val taskBytesRead = new ArrayBuffer[Long]()
+  private def runAndReturnBytesRead(job: => Unit): Long = {
+    runAndReturnMetrics(job, _.taskMetrics.inputMetrics.bytesRead)
+  }
+
+  private def runAndReturnRecordsRead(job: => Unit): Long = {
+    runAndReturnMetrics(job, _.taskMetrics.inputMetrics.recordsRead)
+  }
+
+  private def runAndReturnRecordsWritten(job: => Unit): Long = {
+    runAndReturnMetrics(job, _.taskMetrics.outputMetrics.recordsWritten)
+  }
+
+  private def runAndReturnMetrics(job: => Unit, collector: (SparkListenerTaskEnd) => Long): Long = {
+    val taskMetrics = new ArrayBuffer[Long]()
+
+    // Avoid receiving earlier taskEnd events
+    sc.listenerBus.waitUntilEmpty(500)
+
     sc.addSparkListener(new SparkListener() {
       override def onTaskEnd(taskEnd: SparkListenerTaskEnd) {
-        taskBytesRead += taskEnd.taskMetrics.inputMetrics.get.bytesRead
+        taskMetrics += collector(taskEnd)
       }
     })
 
     job
 
     sc.listenerBus.waitUntilEmpty(500)
-    taskBytesRead.sum
+    taskMetrics.sum
+  }
+
+  test("output metrics on records written") {
+    // Only supported on newer Hadoop
+    if (SparkHadoopUtil.get.getFSBytesWrittenOnThreadCallback().isDefined) {
+      val file = new File(tmpDir, getClass.getSimpleName)
+      val filePath = "file://" + file.getAbsolutePath
+
+      val records = runAndReturnRecordsWritten {
+        sc.parallelize(1 to numRecords).saveAsTextFile(filePath)
+      }
+      assert(records == numRecords)
+    }
+  }
+
+  test("output metrics on records written - new Hadoop API") {
+    // Only supported on newer Hadoop
+    if (SparkHadoopUtil.get.getFSBytesWrittenOnThreadCallback().isDefined) {
+      val file = new File(tmpDir, getClass.getSimpleName)
+      val filePath = "file://" + file.getAbsolutePath
+
+      val records = runAndReturnRecordsWritten {
+        sc.parallelize(1 to numRecords).map(key => (key.toString, key.toString))
+          .saveAsNewAPIHadoopFile[NewTextOutputFormat[String, String]](filePath)
+      }
+      assert(records == numRecords)
+    }
   }
 
   test("output metrics when writing text file") {
@@ -215,7 +296,7 @@ class InputOutputMetricsSuite extends FunSuite with SharedSparkContext {
       val taskBytesWritten = new ArrayBuffer[Long]()
       sc.addSparkListener(new SparkListener() {
         override def onTaskEnd(taskEnd: SparkListenerTaskEnd) {
-          taskBytesWritten += taskEnd.taskMetrics.outputMetrics.get.bytesWritten
+          taskBytesWritten += taskEnd.taskMetrics.outputMetrics.bytesWritten
         }
       })
 
@@ -289,10 +370,10 @@ class OldCombineTextRecordReaderWrapper(
 /**
  * Hadoop 2 has a version of this, but we can't use it for backwards compatibility
  */
-class NewCombineTextInputFormat extends NewCombineFileInputFormat[LongWritable,Text] {
+class NewCombineTextInputFormat extends NewCombineFileInputFormat[LongWritable, Text] {
   def createRecordReader(split: NewInputSplit, context: TaskAttemptContext)
   : NewRecordReader[LongWritable, Text] = {
-    new NewCombineFileRecordReader[LongWritable,Text](split.asInstanceOf[NewCombineFileSplit],
+    new NewCombineFileRecordReader[LongWritable, Text](split.asInstanceOf[NewCombineFileSplit],
       context, classOf[NewCombineTextRecordReaderWrapper])
   }
 }

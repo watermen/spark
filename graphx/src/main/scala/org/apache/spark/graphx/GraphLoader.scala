@@ -17,9 +17,10 @@
 
 package org.apache.spark.graphx
 
-import org.apache.spark.storage.StorageLevel
-import org.apache.spark.{Logging, SparkContext}
+import org.apache.spark.SparkContext
 import org.apache.spark.graphx.impl.{EdgePartitionBuilder, GraphImpl}
+import org.apache.spark.internal.Logging
+import org.apache.spark.storage.StorageLevel
 
 /**
  * Provides utilities for loading [[Graph]]s from files.
@@ -77,7 +78,7 @@ object GraphLoader extends Logging {
         if (!line.isEmpty && line(0) != '#') {
           val lineArray = line.split("\\s+")
           if (lineArray.length < 2) {
-            logWarning("Invalid line: " + line)
+            throw new IllegalArgumentException("Invalid line: " + line)
           }
           val srcId = lineArray(0).toLong
           val dstId = lineArray(1).toLong

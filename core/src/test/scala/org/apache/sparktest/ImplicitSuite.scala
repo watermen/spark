@@ -26,11 +26,11 @@ package org.apache.sparktest
  */
 class ImplicitSuite {
 
-  // We only want to test if `implict` works well with the compiler, so we don't need a real
+  // We only want to test if `implicit` works well with the compiler, so we don't need a real
   // SparkContext.
   def mockSparkContext[T]: org.apache.spark.SparkContext = null
 
-  // We only want to test if `implict` works well with the compiler, so we don't need a real RDD.
+  // We only want to test if `implicit` works well with the compiler, so we don't need a real RDD.
   def mockRDD[T]: org.apache.spark.rdd.RDD[T] = null
 
   def testRddToPairRDDFunctions(): Unit = {
@@ -44,10 +44,18 @@ class ImplicitSuite {
   }
 
   def testRddToSequenceFileRDDFunctions(): Unit = {
-    // TODO eliminating `import intToIntWritable` needs refactoring SequenceFileRDDFunctions.
-    // That will be a breaking change.
-    import org.apache.spark.SparkContext.intToIntWritable
     val rdd: org.apache.spark.rdd.RDD[(Int, Int)] = mockRDD
+    rdd.saveAsSequenceFile("/a/test/path")
+  }
+
+  def testRddToSequenceFileRDDFunctionsWithWritable(): Unit = {
+    val rdd: org.apache.spark.rdd.RDD[(org.apache.hadoop.io.IntWritable, org.apache.hadoop.io.Text)]
+      = mockRDD
+    rdd.saveAsSequenceFile("/a/test/path")
+  }
+
+  def testRddToSequenceFileRDDFunctionsWithBytesArray(): Unit = {
+    val rdd: org.apache.spark.rdd.RDD[(Int, Array[Byte])] = mockRDD
     rdd.saveAsSequenceFile("/a/test/path")
   }
 
