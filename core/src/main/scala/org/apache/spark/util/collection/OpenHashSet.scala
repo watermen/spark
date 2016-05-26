@@ -18,10 +18,7 @@
 package org.apache.spark.util.collection
 
 import scala.reflect._
-
 import com.google.common.hash.Hashing
-
-import org.apache.spark.annotation.Private
 
 /**
  * A simple, fast hash set optimized for non-null insertion-only use case, where keys are never
@@ -40,14 +37,13 @@ import org.apache.spark.annotation.Private
  * It uses quadratic probing with a power-of-2 hash table size, which is guaranteed
  * to explore all spaces for each key (see http://en.wikipedia.org/wiki/Quadratic_probing).
  */
-@Private
+private[spark]
 class OpenHashSet[@specialized(Long, Int) T: ClassTag](
     initialCapacity: Int,
     loadFactor: Double)
   extends Serializable {
 
-  require(initialCapacity <= OpenHashSet.MAX_CAPACITY,
-    s"Can't make capacity bigger than ${OpenHashSet.MAX_CAPACITY} elements")
+  require(initialCapacity <= (1 << 29), "Can't make capacity bigger than 2^29 elements")
   require(initialCapacity >= 1, "Invalid initial capacity")
   require(loadFactor < 1.0, "Load factor must be less than 1.0")
   require(loadFactor > 0.0, "Load factor must be greater than 0.0")
@@ -89,7 +85,7 @@ class OpenHashSet[@specialized(Long, Int) T: ClassTag](
 
   protected var _bitset = new BitSet(_capacity)
 
-  def getBitSet: BitSet = _bitset
+  def getBitSet = _bitset
 
   // Init of the array in constructor (instead of in declaration) to work around a Scala compiler
   // specialization bug that would generate two arrays (one for Object and one for specialized T).
@@ -114,14 +110,6 @@ class OpenHashSet[@specialized(Long, Int) T: ClassTag](
     rehashIfNeeded(k, grow, move)
   }
 
-  def union(other: OpenHashSet[T]): OpenHashSet[T] = {
-    val iterator = other.iterator
-    while (iterator.hasNext) {
-      add(iterator.next())
-    }
-    this
-  }
-
   /**
    * Add an element to the set. This one differs from add in that it doesn't trigger rehashing.
    * The caller is responsible for calling rehashIfNeeded.
@@ -134,7 +122,7 @@ class OpenHashSet[@specialized(Long, Int) T: ClassTag](
    */
   def addWithoutResize(k: T): Int = {
     var pos = hashcode(hasher.hash(k)) & _mask
-    var delta = 1
+    var i = 1
     while (true) {
       if (!_bitset.get(pos)) {
         // This is a new key.
@@ -146,12 +134,14 @@ class OpenHashSet[@specialized(Long, Int) T: ClassTag](
         // Found an existing key.
         return pos
       } else {
-        // quadratic probing with values increase by 1, 2, 3, ...
+        val delta = i
         pos = (pos + delta) & _mask
-        delta += 1
+        i += 1
       }
     }
-    throw new RuntimeException("Should never reach here.")
+    // Never reached here
+    assert(INVALID_POS != INVALID_POS)
+    INVALID_POS
   }
 
   /**
@@ -173,25 +163,27 @@ class OpenHashSet[@specialized(Long, Int) T: ClassTag](
    */
   def getPos(k: T): Int = {
     var pos = hashcode(hasher.hash(k)) & _mask
-    var delta = 1
-    while (true) {
+    var i = 1
+    val maxProbe = _data.size
+    while (i < maxProbe) {
       if (!_bitset.get(pos)) {
         return INVALID_POS
       } else if (k == _data(pos)) {
         return pos
       } else {
-        // quadratic probing with values increase by 1, 2, 3, ...
+        val delta = i
         pos = (pos + delta) & _mask
-        delta += 1
+        i += 1
       }
     }
-    throw new RuntimeException("Should never reach here.")
+    // Never reached here
+    INVALID_POS
   }
 
   /** Return the value at the specified position. */
   def getValue(pos: Int): T = _data(pos)
 
-  def iterator: Iterator[T] = new Iterator[T] {
+  def iterator = new Iterator[T] {
     var pos = nextPos(0)
     override def hasNext: Boolean = pos != INVALID_POS
     override def next(): T = {
@@ -225,8 +217,6 @@ class OpenHashSet[@specialized(Long, Int) T: ClassTag](
    */
   private def rehash(k: T, allocateFunc: (Int) => Unit, moveFunc: (Int, Int) => Unit) {
     val newCapacity = _capacity * 2
-    require(newCapacity > 0 && newCapacity <= OpenHashSet.MAX_CAPACITY,
-      s"Can't contain more than ${(loadFactor * OpenHashSet.MAX_CAPACITY).toInt} elements")
     allocateFunc(newCapacity)
     val newBitset = new BitSet(newCapacity)
     val newData = new Array[T](newCapacity)
@@ -280,10 +270,9 @@ class OpenHashSet[@specialized(Long, Int) T: ClassTag](
 private[spark]
 object OpenHashSet {
 
-  val MAX_CAPACITY = 1 << 30
   val INVALID_POS = -1
-  val NONEXISTENCE_MASK = 1 << 31
-  val POSITION_MASK = (1 << 31) - 1
+  val NONEXISTENCE_MASK = 0x80000000
+  val POSITION_MASK = 0xEFFFFFF
 
   /**
    * A set of specialized hash function implementation to avoid boxing hash code computation

@@ -22,11 +22,10 @@ import scala.collection.immutable.NumericRange
 import org.scalacheck.Arbitrary._
 import org.scalacheck.Gen
 import org.scalacheck.Prop._
+import org.scalatest.FunSuite
 import org.scalatest.prop.Checkers
 
-import org.apache.spark.SparkFunSuite
-
-class ParallelCollectionSplitSuite extends SparkFunSuite with Checkers {
+class ParallelCollectionSplitSuite extends FunSuite with Checkers {
   test("one element per slice") {
     val data = Array(1, 2, 3)
     val slices = ParallelCollectionRDD.slice(data, 3)
@@ -101,7 +100,7 @@ class ParallelCollectionSplitSuite extends SparkFunSuite with Checkers {
     val data = 1 until 100
     val slices = ParallelCollectionRDD.slice(data, 3)
     assert(slices.size === 3)
-    assert(slices.map(_.size).sum === 99)
+    assert(slices.map(_.size).reduceLeft(_+_) === 99)
     assert(slices.forall(_.isInstanceOf[Range]))
   }
 
@@ -109,7 +108,7 @@ class ParallelCollectionSplitSuite extends SparkFunSuite with Checkers {
     val data = 1 to 100
     val slices = ParallelCollectionRDD.slice(data, 3)
     assert(slices.size === 3)
-    assert(slices.map(_.size).sum === 100)
+    assert(slices.map(_.size).reduceLeft(_+_) === 100)
     assert(slices.forall(_.isInstanceOf[Range]))
   }
 
@@ -140,7 +139,7 @@ class ParallelCollectionSplitSuite extends SparkFunSuite with Checkers {
       assert(slices(i).isInstanceOf[Range])
       val range = slices(i).asInstanceOf[Range]
       assert(range.start === i * (N / 40), "slice " + i + " start")
-      assert(range.end   === (i + 1) * (N / 40), "slice " + i + " end")
+      assert(range.end   === (i+1) * (N / 40), "slice " + i + " end")
       assert(range.step  === 1, "slice " + i + " step")
     }
   }
@@ -157,7 +156,7 @@ class ParallelCollectionSplitSuite extends SparkFunSuite with Checkers {
         val slices = ParallelCollectionRDD.slice(d, n)
         ("n slices"    |: slices.size == n) &&
         ("concat to d" |: Seq.concat(slices: _*).mkString(",") == d.mkString(",")) &&
-        ("equal sizes" |: slices.map(_.size).forall(x => x == d.size / n || x == d.size /n + 1))
+        ("equal sizes" |: slices.map(_.size).forall(x => x==d.size/n || x==d.size/n+1))
     }
     check(prop)
   }
@@ -175,7 +174,7 @@ class ParallelCollectionSplitSuite extends SparkFunSuite with Checkers {
         ("n slices"    |: slices.size == n) &&
         ("all ranges"  |: slices.forall(_.isInstanceOf[Range])) &&
         ("concat to d" |: Seq.concat(slices: _*).mkString(",") == d.mkString(",")) &&
-        ("equal sizes" |: slices.map(_.size).forall(x => x == d.size / n || x == d.size / n + 1))
+        ("equal sizes" |: slices.map(_.size).forall(x => x==d.size/n || x==d.size/n+1))
     }
     check(prop)
   }
@@ -193,7 +192,7 @@ class ParallelCollectionSplitSuite extends SparkFunSuite with Checkers {
         ("n slices"    |: slices.size == n) &&
         ("all ranges"  |: slices.forall(_.isInstanceOf[Range])) &&
         ("concat to d" |: Seq.concat(slices: _*).mkString(",") == d.mkString(",")) &&
-        ("equal sizes" |: slices.map(_.size).forall(x => x == d.size / n || x == d.size / n + 1))
+        ("equal sizes" |: slices.map(_.size).forall(x => x==d.size/n || x==d.size/n+1))
     }
     check(prop)
   }
@@ -202,7 +201,7 @@ class ParallelCollectionSplitSuite extends SparkFunSuite with Checkers {
     val data = 1L until 100L
     val slices = ParallelCollectionRDD.slice(data, 3)
     assert(slices.size === 3)
-    assert(slices.map(_.size).sum === 99)
+    assert(slices.map(_.size).reduceLeft(_+_) === 99)
     assert(slices.forall(_.isInstanceOf[NumericRange[_]]))
   }
 
@@ -210,7 +209,7 @@ class ParallelCollectionSplitSuite extends SparkFunSuite with Checkers {
     val data = 1L to 100L
     val slices = ParallelCollectionRDD.slice(data, 3)
     assert(slices.size === 3)
-    assert(slices.map(_.size).sum === 100)
+    assert(slices.map(_.size).reduceLeft(_+_) === 100)
     assert(slices.forall(_.isInstanceOf[NumericRange[_]]))
   }
 
@@ -218,7 +217,7 @@ class ParallelCollectionSplitSuite extends SparkFunSuite with Checkers {
     val data = 1.0 until 100.0 by 1.0
     val slices = ParallelCollectionRDD.slice(data, 3)
     assert(slices.size === 3)
-    assert(slices.map(_.size).sum === 99)
+    assert(slices.map(_.size).reduceLeft(_+_) === 99)
     assert(slices.forall(_.isInstanceOf[NumericRange[_]]))
   }
 
@@ -226,7 +225,7 @@ class ParallelCollectionSplitSuite extends SparkFunSuite with Checkers {
     val data = 1.0 to 100.0 by 1.0
     val slices = ParallelCollectionRDD.slice(data, 3)
     assert(slices.size === 3)
-    assert(slices.map(_.size).sum === 100)
+    assert(slices.map(_.size).reduceLeft(_+_) === 100)
     assert(slices.forall(_.isInstanceOf[NumericRange[_]]))
   }
 

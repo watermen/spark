@@ -17,11 +17,10 @@
 
 package org.apache.spark
 
-import org.scalatest.Assertions
-
+import org.scalatest.{Assertions, FunSuite}
 import org.apache.spark.storage.StorageLevel
 
-class SparkContextInfoSuite extends SparkFunSuite with LocalSparkContext {
+class SparkContextInfoSuite extends FunSuite with LocalSparkContext {
   test("getPersistentRDDs only returns RDDs that are marked as cached") {
     sc = new SparkContext("local", "test")
     assert(sc.getPersistentRDDs.isEmpty === true)
@@ -82,18 +81,20 @@ package object testPackage extends Assertions {
     val curCallSite = sc.getCallSite().shortForm // note: 2 lines after definition of "rdd"
 
     val rddCreationLine = rddCreationSite match {
-      case CALL_SITE_REGEX(func, file, line) =>
+      case CALL_SITE_REGEX(func, file, line) => {
         assert(func === "makeRDD")
         assert(file === "SparkContextInfoSuite.scala")
         line.toInt
+      }
       case _ => fail("Did not match expected call site format")
     }
 
     curCallSite match {
-      case CALL_SITE_REGEX(func, file, line) =>
+      case CALL_SITE_REGEX(func, file, line) => {
         assert(func === "getCallSite") // this is correct because we called it from outside of Spark
         assert(file === "SparkContextInfoSuite.scala")
         assert(line.toInt === rddCreationLine.toInt + 2)
+      }
       case _ => fail("Did not match expected call site format")
     }
   }

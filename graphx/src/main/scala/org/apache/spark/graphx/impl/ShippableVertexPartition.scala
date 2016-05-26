@@ -19,16 +19,17 @@ package org.apache.spark.graphx.impl
 
 import scala.reflect.ClassTag
 
+import org.apache.spark.util.collection.{BitSet, PrimitiveVector}
+
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
-import org.apache.spark.util.collection.{BitSet, PrimitiveVector}
 
 /** Stores vertex attributes to ship to an edge partition. */
 private[graphx]
 class VertexAttributeBlock[VD: ClassTag](val vids: Array[VertexId], val attrs: Array[VD])
   extends Serializable {
   def iterator: Iterator[(VertexId, VD)] =
-    (0 until vids.length).iterator.map { i => (vids(i), attrs(i)) }
+    (0 until vids.size).iterator.map { i => (vids(i), attrs(i)) }
 }
 
 private[graphx]
@@ -49,7 +50,7 @@ object ShippableVertexPartition {
   /**
    * Construct a `ShippableVertexPartition` from the given vertices with the specified routing
    * table, filling in missing vertices mentioned in the routing table using `defaultVal`,
-   * and merging duplicate vertex attribute with mergeFunc.
+   * and merging duplicate vertex atrribute with mergeFunc.
    */
   def apply[VD: ClassTag](
       iter: Iterator[(VertexId, VD)], routingTable: RoutingTablePartition, defaultVal: VD,
@@ -102,8 +103,8 @@ class ShippableVertexPartition[VD: ClassTag](
   extends VertexPartitionBase[VD] {
 
   /** Return a new ShippableVertexPartition with the specified routing table. */
-  def withRoutingTable(_routingTable: RoutingTablePartition): ShippableVertexPartition[VD] = {
-    new ShippableVertexPartition(index, values, mask, _routingTable)
+  def withRoutingTable(routingTable_ : RoutingTablePartition): ShippableVertexPartition[VD] = {
+    new ShippableVertexPartition(index, values, mask, routingTable_)
   }
 
   /**

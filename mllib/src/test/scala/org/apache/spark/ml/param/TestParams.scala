@@ -17,22 +17,20 @@
 
 package org.apache.spark.ml.param
 
-import org.apache.spark.ml.param.shared.{HasHandleInvalid, HasInputCol, HasMaxIter}
-import org.apache.spark.ml.util.Identifiable
-
 /** A subclass of Params for testing. */
-class TestParams(override val uid: String) extends Params with HasHandleInvalid with HasMaxIter
-    with HasInputCol {
+class TestParams extends Params {
 
-  def this() = this(Identifiable.randomUID("testParams"))
-
+  val maxIter = new IntParam(this, "maxIter", "max number of iterations", Some(100))
   def setMaxIter(value: Int): this.type = { set(maxIter, value); this }
+  def getMaxIter: Int = get(maxIter)
 
+  val inputCol = new Param[String](this, "inputCol", "input column name")
   def setInputCol(value: String): this.type = { set(inputCol, value); this }
+  def getInputCol: String = get(inputCol)
 
-  setDefault(maxIter -> 10)
-
-  def clearMaxIter(): this.type = clear(maxIter)
-
-  override def copy(extra: ParamMap): TestParams = defaultCopy(extra)
+  override def validate(paramMap: ParamMap) = {
+    val m = this.paramMap ++ paramMap
+    require(m(maxIter) >= 0)
+    require(m.contains(inputCol))
+  }
 }

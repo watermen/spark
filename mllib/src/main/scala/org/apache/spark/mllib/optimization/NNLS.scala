@@ -17,9 +17,7 @@
 
 package org.apache.spark.mllib.optimization
 
-import java.{util => ju}
-
-import com.github.fommil.netlib.BLAS.{getInstance => blas}
+import org.jblas.{DoubleMatrix, SimpleBlas}
 
 /**
  * Object used to solve nonnegative least squares problems using a modified
@@ -27,20 +25,20 @@ import com.github.fommil.netlib.BLAS.{getInstance => blas}
  */
 private[spark] object NNLS {
   class Workspace(val n: Int) {
-    val scratch = new Array[Double](n)
-    val grad = new Array[Double](n)
-    val x = new Array[Double](n)
-    val dir = new Array[Double](n)
-    val lastDir = new Array[Double](n)
-    val res = new Array[Double](n)
+    val scratch = new DoubleMatrix(n, 1)
+    val grad = new DoubleMatrix(n, 1)
+    val x = new DoubleMatrix(n, 1)
+    val dir = new DoubleMatrix(n, 1)
+    val lastDir = new DoubleMatrix(n, 1)
+    val res = new DoubleMatrix(n, 1)
 
-    def wipe(): Unit = {
-      ju.Arrays.fill(scratch, 0.0)
-      ju.Arrays.fill(grad, 0.0)
-      ju.Arrays.fill(x, 0.0)
-      ju.Arrays.fill(dir, 0.0)
-      ju.Arrays.fill(lastDir, 0.0)
-      ju.Arrays.fill(res, 0.0)
+    def wipe() {
+      scratch.fill(0.0)
+      grad.fill(0.0)
+      x.fill(0.0)
+      dir.fill(0.0)
+      lastDir.fill(0.0)
+      res.fill(0.0)
     }
   }
 
@@ -62,18 +60,18 @@ private[spark] object NNLS {
    * direction, however, while this method only uses a conjugate gradient direction if the last
    * iteration did not cause a previously-inactive constraint to become active.
    */
-  def solve(ata: Array[Double], atb: Array[Double], ws: Workspace): Array[Double] = {
+  def solve(ata: DoubleMatrix, atb: DoubleMatrix, ws: Workspace): Array[Double] = {
     ws.wipe()
 
-    val n = atb.length
+    val n = atb.rows
     val scratch = ws.scratch
 
     // find the optimal unconstrained step
-    def steplen(dir: Array[Double], res: Array[Double]): Double = {
-      val top = blas.ddot(n, dir, 1, res, 1)
-      blas.dgemv("N", n, n, 1.0, ata, n, dir, 1, 0.0, scratch, 1)
+    def steplen(dir: DoubleMatrix, res: DoubleMatrix): Double = {
+      val top = SimpleBlas.dot(dir, res)
+      SimpleBlas.gemv(1.0, ata, dir, 0.0, scratch)
       // Push the denominator upward very slightly to avoid infinities and silliness
-      top / (blas.ddot(n, scratch, 1, dir, 1) + 1e-20)
+      top / (SimpleBlas.dot(scratch, dir) + 1e-20)
     }
 
     // stopping condition
@@ -91,59 +89,59 @@ private[spark] object NNLS {
     val dir = ws.dir
     val lastDir = ws.lastDir
     val res = ws.res
-    val iterMax = math.max(400, 20 * n)
+    val iterMax = Math.max(400, 20 * n)
     var lastNorm = 0.0
     var iterno = 0
     var lastWall = 0 // Last iteration when we hit a bound constraint.
     var i = 0
     while (iterno < iterMax) {
       // find the residual
-      blas.dgemv("N", n, n, 1.0, ata, n, x, 1, 0.0, res, 1)
-      blas.daxpy(n, -1.0, atb, 1, res, 1)
-      blas.dcopy(n, res, 1, grad, 1)
+      SimpleBlas.gemv(1.0, ata, x, 0.0, res)
+      SimpleBlas.axpy(-1.0, atb, res)
+      SimpleBlas.copy(res, grad)
 
       // project the gradient
       i = 0
       while (i < n) {
-        if (grad(i) > 0.0 && x(i) == 0.0) {
-          grad(i) = 0.0
+        if (grad.data(i) > 0.0 && x.data(i) == 0.0) {
+          grad.data(i) = 0.0
         }
         i = i + 1
       }
-      val ngrad = blas.ddot(n, grad, 1, grad, 1)
+      val ngrad = SimpleBlas.dot(grad, grad)
 
-      blas.dcopy(n, grad, 1, dir, 1)
+      SimpleBlas.copy(grad, dir)
 
       // use a CG direction under certain conditions
       var step = steplen(grad, res)
       var ndir = 0.0
-      val nx = blas.ddot(n, x, 1, x, 1)
+      val nx = SimpleBlas.dot(x, x)
       if (iterno > lastWall + 1) {
         val alpha = ngrad / lastNorm
-        blas.daxpy(n, alpha, lastDir, 1, dir, 1)
+        SimpleBlas.axpy(alpha, lastDir, dir)
         val dstep = steplen(dir, res)
-        ndir = blas.ddot(n, dir, 1, dir, 1)
+        ndir = SimpleBlas.dot(dir, dir)
         if (stop(dstep, ndir, nx)) {
           // reject the CG step if it could lead to premature termination
-          blas.dcopy(n, grad, 1, dir, 1)
-          ndir = blas.ddot(n, dir, 1, dir, 1)
+          SimpleBlas.copy(grad, dir)
+          ndir = SimpleBlas.dot(dir, dir)
         } else {
           step = dstep
         }
       } else {
-        ndir = blas.ddot(n, dir, 1, dir, 1)
+        ndir = SimpleBlas.dot(dir, dir)
       }
 
       // terminate?
       if (stop(step, ndir, nx)) {
-        return x.clone
+        return x.data.clone
       }
 
       // don't run through the walls
       i = 0
       while (i < n) {
-        if (step * dir(i) > x(i)) {
-          step = x(i) / dir(i)
+        if (step * dir.data(i) > x.data(i)) {
+          step = x.data(i) / dir.data(i)
         }
         i = i + 1
       }
@@ -151,19 +149,19 @@ private[spark] object NNLS {
       // take the step
       i = 0
       while (i < n) {
-        if (step * dir(i) > x(i) * (1 - 1e-14)) {
-          x(i) = 0
+        if (step * dir.data(i) > x.data(i) * (1 - 1e-14)) {
+          x.data(i) = 0
           lastWall = iterno
         } else {
-          x(i) -= step * dir(i)
+          x.data(i) -= step * dir.data(i)
         }
         i = i + 1
       }
 
       iterno = iterno + 1
-      blas.dcopy(n, dir, 1, lastDir, 1)
+      SimpleBlas.copy(dir, lastDir)
       lastNorm = ngrad
     }
-    x.clone
+    x.data.clone
   }
 }

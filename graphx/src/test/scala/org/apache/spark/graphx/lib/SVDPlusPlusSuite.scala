@@ -17,11 +17,12 @@
 
 package org.apache.spark.graphx.lib
 
-import org.apache.spark.SparkFunSuite
+import org.scalatest.FunSuite
+
 import org.apache.spark.graphx._
 
 
-class SVDPlusPlusSuite extends SparkFunSuite with LocalSparkContext {
+class SVDPlusPlusSuite extends FunSuite with LocalSparkContext {
 
   test("Test SVD++ with mean square error on training set") {
     withSpark { sc =>
@@ -31,11 +32,11 @@ class SVDPlusPlusSuite extends SparkFunSuite with LocalSparkContext {
         Edge(fields(0).toLong * 2, fields(1).toLong * 2 + 1, fields(2).toDouble)
       }
       val conf = new SVDPlusPlus.Conf(10, 2, 0.0, 5.0, 0.007, 0.007, 0.005, 0.015) // 2 iterations
-      val (graph, _) = SVDPlusPlus.run(edges, conf)
+      var (graph, u) = SVDPlusPlus.run(edges, conf)
       graph.cache()
-      val err = graph.vertices.map { case (vid, vd) =>
+      val err = graph.vertices.collect().map{ case (vid, vd) =>
         if (vid % 2 == 1) vd._4 else 0.0
-      }.reduce(_ + _) / graph.numEdges
+      }.reduce(_ + _) / graph.triplets.collect().size
       assert(err <= svdppErr)
     }
   }

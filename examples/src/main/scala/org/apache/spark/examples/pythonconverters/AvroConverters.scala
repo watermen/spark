@@ -19,7 +19,7 @@ package org.apache.spark.examples.pythonconverters
 
 import java.util.{Collection => JCollection, Map => JMap}
 
-import scala.collection.JavaConverters._
+import scala.collection.JavaConversions._
 
 import org.apache.avro.generic.{GenericFixed, IndexedRecord}
 import org.apache.avro.mapred.AvroWrapper
@@ -36,21 +36,22 @@ object AvroConversionUtil extends Serializable {
       return null
     }
     schema.getType match {
-      case UNION => unpackUnion(obj, schema)
-      case ARRAY => unpackArray(obj, schema)
-      case FIXED => unpackFixed(obj, schema)
-      case MAP => unpackMap(obj, schema)
-      case BYTES => unpackBytes(obj)
-      case RECORD => unpackRecord(obj)
-      case STRING => obj.toString
-      case ENUM => obj.toString
-      case NULL => obj
+      case UNION   => unpackUnion(obj, schema)
+      case ARRAY   => unpackArray(obj, schema)
+      case FIXED   => unpackFixed(obj, schema)
+      case MAP     => unpackMap(obj, schema)
+      case BYTES   => unpackBytes(obj)
+      case RECORD  => unpackRecord(obj)
+      case STRING  => obj.toString
+      case ENUM    => obj.toString
+      case NULL    => obj
       case BOOLEAN => obj
-      case DOUBLE => obj
-      case FLOAT => obj
-      case INT => obj
-      case LONG => obj
-      case other => throw new SparkException(s"Unknown Avro schema type ${other.getName}")
+      case DOUBLE  => obj
+      case FLOAT   => obj
+      case INT     => obj
+      case LONG    => obj
+      case other   => throw new SparkException(
+        s"Unknown Avro schema type ${other.getName}")
     }
   }
 
@@ -58,7 +59,7 @@ object AvroConversionUtil extends Serializable {
     val map = new java.util.HashMap[String, Any]
     obj match {
       case record: IndexedRecord =>
-        record.getSchema.getFields.asScala.zipWithIndex.foreach { case (f, i) =>
+        record.getSchema.getFields.zipWithIndex.foreach { case (f, i) =>
           map.put(f.name, fromAvro(record.get(i), f.schema))
         }
       case other => throw new SparkException(
@@ -68,9 +69,9 @@ object AvroConversionUtil extends Serializable {
   }
 
   def unpackMap(obj: Any, schema: Schema): JMap[String, Any] = {
-    obj.asInstanceOf[JMap[_, _]].asScala.map { case (key, value) =>
+    obj.asInstanceOf[JMap[_, _]].map { case (key, value) =>
       (key.toString, fromAvro(value, schema.getValueType))
-    }.asJava
+    }
   }
 
   def unpackFixed(obj: Any, schema: Schema): Array[Byte] = {
@@ -79,10 +80,7 @@ object AvroConversionUtil extends Serializable {
 
   def unpackBytes(obj: Any): Array[Byte] = {
     val bytes: Array[Byte] = obj match {
-      case buf: java.nio.ByteBuffer =>
-        val arr = new Array[Byte](buf.remaining())
-        buf.get(arr)
-        arr
+      case buf: java.nio.ByteBuffer => buf.array()
       case arr: Array[Byte] => arr
       case other => throw new SparkException(
         s"Unknown BYTES type ${other.getClass.getName}")
@@ -94,17 +92,17 @@ object AvroConversionUtil extends Serializable {
 
   def unpackArray(obj: Any, schema: Schema): JCollection[Any] = obj match {
     case c: JCollection[_] =>
-      c.asScala.map(fromAvro(_, schema.getElementType)).toSeq.asJava
+      c.map(fromAvro(_, schema.getElementType))
     case arr: Array[_] if arr.getClass.getComponentType.isPrimitive =>
-      arr.toSeq.asJava.asInstanceOf[JCollection[Any]]
+      arr.toSeq
     case arr: Array[_] =>
-      arr.map(fromAvro(_, schema.getElementType)).toSeq.asJava
+      arr.map(fromAvro(_, schema.getElementType)).toSeq
     case other => throw new SparkException(
       s"Unknown ARRAY type ${other.getClass.getName}")
   }
 
   def unpackUnion(obj: Any, schema: Schema): Any = {
-    schema.getTypes.asScala.toList match {
+    schema.getTypes.toList match {
       case List(s) => fromAvro(obj, s)
       case List(n, s) if n.getType == NULL => fromAvro(obj, s)
       case List(s, n) if n.getType == NULL => fromAvro(obj, s)

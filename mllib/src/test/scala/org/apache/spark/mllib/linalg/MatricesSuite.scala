@@ -19,17 +19,14 @@ package org.apache.spark.mllib.linalg
 
 import java.util.Random
 
+import org.mockito.Mockito.when
+import org.scalatest.FunSuite
+import org.scalatest.mock.MockitoSugar._
 import scala.collection.mutable.{Map => MutableMap}
 
-import breeze.linalg.{CSCMatrix, Matrix => BM}
-import org.mockito.Mockito.when
-import org.scalatest.mock.MockitoSugar._
-
-import org.apache.spark.SparkFunSuite
-import org.apache.spark.ml.{linalg => newlinalg}
 import org.apache.spark.mllib.util.TestingUtils._
 
-class MatricesSuite extends SparkFunSuite {
+class MatricesSuite extends FunSuite {
   test("dense matrix construction") {
     val m = 3
     val n = 2
@@ -75,35 +72,6 @@ class MatricesSuite extends SparkFunSuite {
     intercept[IllegalArgumentException] {
       Matrices.sparse(3, 2, Array(0, 1, 2), Array(1, 2), Array(0.0, 1.0, 2.0))
     }
-  }
-
-  test("index in matrices incorrect input") {
-    val sm = Matrices.sparse(3, 2, Array(0, 2, 3), Array(1, 2, 1), Array(0.0, 1.0, 2.0))
-    val dm = Matrices.dense(3, 2, Array(0.0, 2.3, 1.4, 3.2, 1.0, 9.1))
-    Array(sm, dm).foreach { mat =>
-      intercept[IllegalArgumentException] { mat.index(4, 1) }
-      intercept[IllegalArgumentException] { mat.index(1, 4) }
-      intercept[IllegalArgumentException] { mat.index(-1, 2) }
-      intercept[IllegalArgumentException] { mat.index(1, -2) }
-    }
-  }
-
-  test("equals") {
-    val dm1 = Matrices.dense(2, 2, Array(0.0, 1.0, 2.0, 3.0))
-    assert(dm1 === dm1)
-    assert(dm1 !== dm1.transpose)
-
-    val dm2 = Matrices.dense(2, 2, Array(0.0, 2.0, 1.0, 3.0))
-    assert(dm1 === dm2.transpose)
-
-    val sm1 = dm1.asInstanceOf[DenseMatrix].toSparse
-    assert(sm1 === sm1)
-    assert(sm1 === dm1)
-    assert(sm1 !== sm1.transpose)
-
-    val sm2 = dm2.asInstanceOf[DenseMatrix].toSparse
-    assert(sm1 === sm2.transpose)
-    assert(sm1 === dm2.transpose)
   }
 
   test("matrix copies are deep copies") {
@@ -153,10 +121,6 @@ class MatricesSuite extends SparkFunSuite {
       sparseMat.update(0, 0, 10.0)
     }
 
-    intercept[NoSuchElementException] {
-      sparseMat.update(2, 1, 10.0)
-    }
-
     sparseMat.update(0, 1, 10.0)
     assert(sparseMat(0, 1) === 10.0)
     assert(sparseMat.values(2) === 10.0)
@@ -173,8 +137,8 @@ class MatricesSuite extends SparkFunSuite {
     val spMat1 = new SparseMatrix(m, n, colPtrs, rowIndices, values)
     val deMat1 = new DenseMatrix(m, n, allValues)
 
-    val spMat2 = deMat1.toSparse
-    val deMat2 = spMat1.toDense
+    val spMat2 = deMat1.toSparse()
+    val deMat2 = spMat1.toDense()
 
     assert(spMat1.toBreeze === spMat2.toBreeze)
     assert(deMat1.toBreeze === deMat2.toBreeze)
@@ -221,8 +185,8 @@ class MatricesSuite extends SparkFunSuite {
     assert(!dA.toArray.eq(dAT.toArray), "has to have a new array")
     assert(dA.values.eq(dAT.transpose.asInstanceOf[DenseMatrix].values), "should not copy array")
 
-    assert(dAT.toSparse.toBreeze === sATexpected.toBreeze)
-    assert(sAT.toDense.toBreeze === dATexpected.toBreeze)
+    assert(dAT.toSparse().toBreeze === sATexpected.toBreeze)
+    assert(sAT.toDense().toBreeze === dATexpected.toBreeze)
   }
 
   test("foreachActive") {
@@ -459,156 +423,5 @@ class MatricesSuite extends SparkFunSuite {
     assert(mat.numCols === 4)
     assert(mat.rowIndices.toSeq === Seq(3, 0, 2, 1))
     assert(mat.values.toSeq === Seq(1.0, 2.0, 3.0, 4.0))
-  }
-
-  test("MatrixUDT") {
-    val dm1 = new DenseMatrix(2, 2, Array(0.9, 1.2, 2.3, 9.8))
-    val dm2 = new DenseMatrix(3, 2, Array(0.0, 1.21, 2.3, 9.8, 9.0, 0.0))
-    val dm3 = new DenseMatrix(0, 0, Array())
-    val sm1 = dm1.toSparse
-    val sm2 = dm2.toSparse
-    val sm3 = dm3.toSparse
-    val mUDT = new MatrixUDT()
-    Seq(dm1, dm2, dm3, sm1, sm2, sm3).foreach {
-        mat => assert(mat.toArray === mUDT.deserialize(mUDT.serialize(mat)).toArray)
-    }
-    assert(mUDT.typeName == "matrix")
-    assert(mUDT.simpleString == "matrix")
-  }
-
-  test("toString") {
-    val empty = Matrices.ones(0, 0)
-    empty.toString(0, 0)
-
-    val mat = Matrices.rand(5, 10, new Random())
-    mat.toString(-1, -5)
-    mat.toString(0, 0)
-    mat.toString(Int.MinValue, Int.MinValue)
-    mat.toString(Int.MaxValue, Int.MaxValue)
-    var lines = mat.toString(6, 50).lines.toArray
-    assert(lines.size == 5 && lines.forall(_.size <= 50))
-
-    lines = mat.toString(5, 100).lines.toArray
-    assert(lines.size == 5 && lines.forall(_.size <= 100))
-  }
-
-  test("numNonzeros and numActives") {
-    val dm1 = Matrices.dense(3, 2, Array(0, 0, -1, 1, 0, 1))
-    assert(dm1.numNonzeros === 3)
-    assert(dm1.numActives === 6)
-
-    val sm1 = Matrices.sparse(3, 2, Array(0, 2, 3), Array(0, 2, 1), Array(0.0, -1.2, 0.0))
-    assert(sm1.numNonzeros === 1)
-    assert(sm1.numActives === 3)
-  }
-
-  test("fromBreeze with sparse matrix") {
-    // colPtr.last does NOT always equal to values.length in breeze SCSMatrix and
-    // invocation of compact() may be necessary. Refer to SPARK-11507
-    val bm1: BM[Double] = new CSCMatrix[Double](
-      Array(1.0, 1, 1), 3, 3, Array(0, 1, 2, 3), Array(0, 1, 2))
-    val bm2: BM[Double] = new CSCMatrix[Double](
-      Array(1.0, 2, 2, 4), 3, 3, Array(0, 0, 2, 4), Array(1, 2, 1, 2))
-    val sum = bm1 + bm2
-    Matrices.fromBreeze(sum)
-  }
-
-  test("row/col iterator") {
-    val dm = new DenseMatrix(3, 2, Array(0, 1, 2, 3, 4, 0))
-    val sm = dm.toSparse
-    val rows = Seq(Vectors.dense(0, 3), Vectors.dense(1, 4), Vectors.dense(2, 0))
-    val cols = Seq(Vectors.dense(0, 1, 2), Vectors.dense(3, 4, 0))
-    for (m <- Seq(dm, sm)) {
-      assert(m.rowIter.toSeq === rows)
-      assert(m.colIter.toSeq === cols)
-      assert(m.transpose.rowIter.toSeq === cols)
-      assert(m.transpose.colIter.toSeq === rows)
-    }
-  }
-
-  test("conversions between new local linalg and mllib linalg") {
-    val dm: DenseMatrix = new DenseMatrix(3, 2, Array(0.0, 0.0, 1.0, 0.0, 2.0, 3.5))
-    val sm: SparseMatrix = dm.toSparse
-    val sm0: Matrix = sm.asInstanceOf[Matrix]
-    val dm0: Matrix = dm.asInstanceOf[Matrix]
-
-    def compare(oldM: Matrix, newM: newlinalg.Matrix): Unit = {
-      assert(oldM.toArray === newM.toArray)
-      assert(oldM.numCols === newM.numCols)
-      assert(oldM.numRows === newM.numRows)
-    }
-
-    val newSM: newlinalg.SparseMatrix = sm.asML
-    val newDM: newlinalg.DenseMatrix = dm.asML
-    val newSM0: newlinalg.Matrix = sm0.asML
-    val newDM0: newlinalg.Matrix = dm0.asML
-    assert(newSM0.isInstanceOf[newlinalg.SparseMatrix])
-    assert(newDM0.isInstanceOf[newlinalg.DenseMatrix])
-    compare(sm, newSM)
-    compare(dm, newDM)
-    compare(sm0, newSM0)
-    compare(dm0, newDM0)
-
-    val oldSM: SparseMatrix = SparseMatrix.fromML(newSM)
-    val oldDM: DenseMatrix = DenseMatrix.fromML(newDM)
-    val oldSM0: Matrix = Matrices.fromML(newSM0)
-    val oldDM0: Matrix = Matrices.fromML(newDM0)
-    assert(oldSM0.isInstanceOf[SparseMatrix])
-    assert(oldDM0.isInstanceOf[DenseMatrix])
-    compare(oldSM, newSM)
-    compare(oldDM, newDM)
-    compare(oldSM0, newSM0)
-    compare(oldDM0, newDM0)
-  }
-
-  test("implicit conversions between new local linalg and mllib linalg") {
-
-    def mllibMatrixToTriple(m: Matrix): (Array[Double], Int, Int) =
-      (m.toArray, m.numCols, m.numRows)
-
-    def mllibDenseMatrixToTriple(m: DenseMatrix): (Array[Double], Int, Int) =
-      (m.toArray, m.numCols, m.numRows)
-
-    def mllibSparseMatrixToTriple(m: SparseMatrix): (Array[Double], Int, Int) =
-      (m.toArray, m.numCols, m.numRows)
-
-    def mlMatrixToTriple(m: newlinalg.Matrix): (Array[Double], Int, Int) =
-      (m.toArray, m.numCols, m.numRows)
-
-    def mlDenseMatrixToTriple(m: newlinalg.DenseMatrix): (Array[Double], Int, Int) =
-      (m.toArray, m.numCols, m.numRows)
-
-    def mlSparseMatrixToTriple(m: newlinalg.SparseMatrix): (Array[Double], Int, Int) =
-      (m.toArray, m.numCols, m.numRows)
-
-    def compare(m1: (Array[Double], Int, Int), m2: (Array[Double], Int, Int)): Unit = {
-      assert(m1._1 === m2._1)
-      assert(m1._2 === m2._2)
-      assert(m1._3 === m2._3)
-    }
-
-    val dm: DenseMatrix = new DenseMatrix(3, 2, Array(0.0, 0.0, 1.0, 0.0, 2.0, 3.5))
-    val sm: SparseMatrix = dm.toSparse
-    val sm0: Matrix = sm.asInstanceOf[Matrix]
-    val dm0: Matrix = dm.asInstanceOf[Matrix]
-
-    val newSM: newlinalg.SparseMatrix = sm.asML
-    val newDM: newlinalg.DenseMatrix = dm.asML
-    val newSM0: newlinalg.Matrix = sm0.asML
-    val newDM0: newlinalg.Matrix = dm0.asML
-
-    import org.apache.spark.mllib.linalg.MatrixImplicits._
-
-    compare(mllibMatrixToTriple(dm0), mllibMatrixToTriple(newDM0))
-    compare(mllibMatrixToTriple(sm0), mllibMatrixToTriple(newSM0))
-
-    compare(mllibDenseMatrixToTriple(dm), mllibDenseMatrixToTriple(newDM))
-    compare(mllibSparseMatrixToTriple(sm), mllibSparseMatrixToTriple(newSM))
-
-    compare(mlMatrixToTriple(dm0), mlMatrixToTriple(newDM))
-    compare(mlMatrixToTriple(sm0), mlMatrixToTriple(newSM0))
-
-    compare(mlDenseMatrixToTriple(dm), mlDenseMatrixToTriple(newDM))
-    compare(mlSparseMatrixToTriple(sm), mlSparseMatrixToTriple(newSM))
   }
 }

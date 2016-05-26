@@ -18,20 +18,20 @@
 package org.apache.spark.scheduler
 
 import java.io.{File, PrintWriter}
-import java.net.URI
 
 import org.json4s.jackson.JsonMethods._
-import org.scalatest.BeforeAndAfter
+import org.scalatest.{BeforeAndAfter, FunSuite}
 
-import org.apache.spark.{SparkConf, SparkContext, SparkFunSuite}
+import org.apache.spark.{SparkConf, SparkContext, SPARK_VERSION}
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.io.CompressionCodec
-import org.apache.spark.util.{JsonProtocol, JsonProtocolSuite, Utils}
+import org.apache.spark.util.{JsonProtocol, Utils}
 
 /**
  * Test whether ReplayListenerBus replays events from logs correctly.
  */
-class ReplayListenerSuite extends SparkFunSuite with BeforeAndAfter {
+class ReplayListenerSuite extends FunSuite with BeforeAndAfter {
   private val fileSystem = Utils.getHadoopFileSystem("/",
     SparkHadoopUtil.get.newConfiguration(new SparkConf()))
   private var testDir: File = _
@@ -49,12 +49,10 @@ class ReplayListenerSuite extends SparkFunSuite with BeforeAndAfter {
     val fstream = fileSystem.create(logFilePath)
     val writer = new PrintWriter(fstream)
     val applicationStart = SparkListenerApplicationStart("Greatest App (N)ever", None,
-      125L, "Mickey", None)
+      125L, "Mickey")
     val applicationEnd = SparkListenerApplicationEnd(1000L)
-    // scalastyle:off println
     writer.println(compact(render(JsonProtocol.sparkEventToJson(applicationStart))))
     writer.println(compact(render(JsonProtocol.sparkEventToJson(applicationEnd))))
-    // scalastyle:on println
     writer.close()
 
     val conf = EventLoggingListenerSuite.getLoggingConf(logFilePath)
@@ -63,7 +61,7 @@ class ReplayListenerSuite extends SparkFunSuite with BeforeAndAfter {
     try {
       val replayer = new ReplayListenerBus()
       replayer.addListener(eventMonster)
-      replayer.replay(logData, logFilePath.toString)
+      replayer.replay(logData, SPARK_VERSION)
     } finally {
       logData.close()
     }
@@ -101,7 +99,7 @@ class ReplayListenerSuite extends SparkFunSuite with BeforeAndAfter {
     fileSystem.mkdirs(logDirPath)
 
     val conf = EventLoggingListenerSuite.getLoggingConf(logDirPath, codecName)
-    val sc = new SparkContext("local-cluster[2,1,1024]", "Test replay", conf)
+    val sc = new SparkContext("local-cluster[2,1,512]", "Test replay", conf)
 
     // Run a few jobs
     sc.parallelize(1 to 100, 1).count()
@@ -114,15 +112,15 @@ class ReplayListenerSuite extends SparkFunSuite with BeforeAndAfter {
     val applications = fileSystem.listStatus(logDirPath)
     assert(applications != null && applications.size > 0)
     val eventLog = applications.sortBy(_.getModificationTime).last
-    assert(!eventLog.isDirectory)
+    assert(!eventLog.isDir)
 
     // Replay events
-    val logData = EventLoggingListener.openEventLog(eventLog.getPath(), fileSystem)
+    val (logData, version) = EventLoggingListener.openEventLog(eventLog.getPath(), fileSystem)
     val eventMonster = new EventMonster(conf)
     try {
       val replayer = new ReplayListenerBus()
       replayer.addListener(eventMonster)
-      replayer.replay(logData, eventLog.getPath().toString)
+      replayer.replay(logData, version)
     } finally {
       logData.close()
     }
@@ -131,11 +129,7 @@ class ReplayListenerSuite extends SparkFunSuite with BeforeAndAfter {
     assert(sc.eventLogger.isDefined)
     val originalEvents = sc.eventLogger.get.loggedEvents
     val replayedEvents = eventMonster.loggedEvents
-    originalEvents.zip(replayedEvents).foreach { case (e1, e2) =>
-      // Don't compare the JSON here because accumulators in StageInfo may be out of order
-      JsonProtocolSuite.assertEquals(
-        JsonProtocol.sparkEventFromJson(e1), JsonProtocol.sparkEventFromJson(e2))
-    }
+    originalEvents.zip(replayedEvents).foreach { case (e1, e2) => assert(e1 === e2) }
   }
 
   /**
@@ -151,9 +145,16 @@ class ReplayListenerSuite extends SparkFunSuite with BeforeAndAfter {
    * log the events.
    */
   private class EventMonster(conf: SparkConf)
-    extends EventLoggingListener("test", None, new URI("testdir"), conf) {
+    extends EventLoggingListener("test", "testdir", conf) {
 
     override def start() { }
 
   }
+
+  private def getCompressionCodec(codecName: String) = {
+    val conf = new SparkConf
+    conf.set("spark.io.compression.codec", codecName)
+    CompressionCodec.createCodec(conf)
+  }
+
 }

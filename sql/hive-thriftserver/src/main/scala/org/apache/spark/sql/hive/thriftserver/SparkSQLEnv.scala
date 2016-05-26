@@ -17,36 +17,28 @@
 
 package org.apache.spark.sql.hive.thriftserver
 
-import java.io.PrintStream
+import scala.collection.JavaConversions._
 
-import scala.collection.JavaConverters._
-
-import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{SparkSession, SQLContext}
-import org.apache.spark.sql.hive.{HiveSessionState, HiveUtils}
-import org.apache.spark.util.Utils
+import org.apache.spark.scheduler.StatsReportListener
+import org.apache.spark.sql.hive.{HiveShim, HiveContext}
+import org.apache.spark.{Logging, SparkConf, SparkContext}
 
 /** A singleton object for the master program. The slaves should not access this. */
 private[hive] object SparkSQLEnv extends Logging {
   logDebug("Initializing SparkSQLEnv")
 
-  var sqlContext: SQLContext = _
+  var hiveContext: HiveContext = _
   var sparkContext: SparkContext = _
 
   def init() {
-    if (sqlContext == null) {
+    if (hiveContext == null) {
       val sparkConf = new SparkConf(loadDefaults = true)
       val maybeSerializer = sparkConf.getOption("spark.serializer")
       val maybeKryoReferenceTracking = sparkConf.getOption("spark.kryo.referenceTracking")
-      // If user doesn't specify the appName, we want to get [SparkSQL::localHostName] instead of
-      // the default appName [SparkSQLCLIDriver] in cli or beeline.
-      val maybeAppName = sparkConf
-        .getOption("spark.app.name")
-        .filterNot(_ == classOf[SparkSQLCLIDriver].getName)
 
       sparkConf
-        .setAppName(maybeAppName.getOrElse(s"SparkSQL::${Utils.localHostName()}"))
+        .setAppName(s"SparkSQL::${java.net.InetAddress.getLocalHost.getHostName}")
+        .set("spark.sql.hive.version", HiveShim.version)
         .set(
           "spark.serializer",
           maybeSerializer.getOrElse("org.apache.spark.serializer.KryoSerializer"))
@@ -54,15 +46,15 @@ private[hive] object SparkSQLEnv extends Logging {
           "spark.kryo.referenceTracking",
           maybeKryoReferenceTracking.getOrElse("false"))
 
-      val sparkSession = SparkSession.builder.config(sparkConf).enableHiveSupport().getOrCreate()
-      sparkContext = sparkSession.sparkContext
-      sqlContext = sparkSession.sqlContext
+      sparkContext = new SparkContext(sparkConf)
+      sparkContext.addSparkListener(new StatsReportListener())
+      hiveContext = new HiveContext(sparkContext)
 
-      val sessionState = sparkSession.sessionState.asInstanceOf[HiveSessionState]
-      sessionState.metadataHive.setOut(new PrintStream(System.out, true, "UTF-8"))
-      sessionState.metadataHive.setInfo(new PrintStream(System.err, true, "UTF-8"))
-      sessionState.metadataHive.setError(new PrintStream(System.err, true, "UTF-8"))
-      sparkSession.conf.set("spark.sql.hive.version", HiveUtils.hiveExecutionVersion)
+      if (log.isDebugEnabled) {
+        hiveContext.hiveconf.getAllProperties.toSeq.sorted.foreach { case (k, v) =>
+          logDebug(s"HiveConf var: $k=$v")
+        }
+      }
     }
   }
 
@@ -73,7 +65,7 @@ private[hive] object SparkSQLEnv extends Logging {
     if (SparkSQLEnv.sparkContext != null) {
       sparkContext.stop()
       sparkContext = null
-      sqlContext = null
+      hiveContext = null
     }
   }
 }

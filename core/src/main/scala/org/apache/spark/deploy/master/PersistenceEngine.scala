@@ -17,10 +17,9 @@
 
 package org.apache.spark.deploy.master
 
-import scala.reflect.ClassTag
-
 import org.apache.spark.annotation.DeveloperApi
-import org.apache.spark.rpc.RpcEnv
+
+import scala.reflect.ClassTag
 
 /**
  * Allows Master to persist any state that is necessary in order to recover from a failure.
@@ -34,18 +33,18 @@ import org.apache.spark.rpc.RpcEnv
  * The implementation of this trait defines how name-object pairs are stored or retrieved.
  */
 @DeveloperApi
-abstract class PersistenceEngine {
+trait PersistenceEngine {
 
   /**
    * Defines how the object is serialized and persisted. Implementation will
    * depend on the store used.
    */
-  def persist(name: String, obj: Object): Unit
+  def persist(name: String, obj: Object)
 
   /**
    * Defines how the object referred by its name is removed from the store.
    */
-  def unpersist(name: String): Unit
+  def unpersist(name: String)
 
   /**
    * Gives all objects, matching a prefix. This defines how objects are
@@ -81,17 +80,14 @@ abstract class PersistenceEngine {
    * Returns the persisted data sorted by their respective ids (which implies that they're
    * sorted by time of creation).
    */
-  final def readPersistedData(
-      rpcEnv: RpcEnv): (Seq[ApplicationInfo], Seq[DriverInfo], Seq[WorkerInfo]) = {
-    rpcEnv.deserialize { () =>
-      (read[ApplicationInfo]("app_"), read[DriverInfo]("driver_"), read[WorkerInfo]("worker_"))
-    }
+  final def readPersistedData(): (Seq[ApplicationInfo], Seq[DriverInfo], Seq[WorkerInfo]) = {
+    (read[ApplicationInfo]("app_"), read[DriverInfo]("driver_"), read[WorkerInfo]("worker_"))
   }
 
   def close() {}
 }
 
-private[master] class BlackHolePersistenceEngine extends PersistenceEngine {
+private[spark] class BlackHolePersistenceEngine extends PersistenceEngine {
 
   override def persist(name: String, obj: Object): Unit = {}
 

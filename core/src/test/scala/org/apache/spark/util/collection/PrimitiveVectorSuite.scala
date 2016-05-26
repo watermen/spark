@@ -17,10 +17,11 @@
 
 package org.apache.spark.util.collection
 
-import org.apache.spark.SparkFunSuite
+import org.scalatest.FunSuite
+
 import org.apache.spark.util.SizeEstimator
 
-class PrimitiveVectorSuite extends SparkFunSuite {
+class PrimitiveVectorSuite extends FunSuite {
 
   test("primitive value") {
     val vector = new PrimitiveVector[Int]

@@ -17,13 +17,12 @@
 
 package org.apache.spark.mllib.tree.impurity
 
-import org.apache.spark.annotation.{DeveloperApi, Experimental, Since}
+import org.apache.spark.annotation.{DeveloperApi, Experimental}
 
 /**
  * :: Experimental ::
  * Class for calculating variance during regression
  */
-@Since("1.0.0")
 @Experimental
 object Variance extends Impurity {
 
@@ -34,7 +33,6 @@ object Variance extends Impurity {
    * @param totalCount sum of counts for all labels
    * @return information value, or 0 if totalCount = 0
    */
-  @Since("1.1.0")
   @DeveloperApi
   override def calculate(counts: Array[Double], totalCount: Double): Double =
      throw new UnsupportedOperationException("Variance.calculate")
@@ -47,7 +45,6 @@ object Variance extends Impurity {
    * @param sumSquares summation of squares of the labels
    * @return information value, or 0 if count = 0
    */
-  @Since("1.0.0")
   @DeveloperApi
   override def calculate(count: Double, sum: Double, sumSquares: Double): Double = {
     if (count == 0) {
@@ -61,8 +58,7 @@ object Variance extends Impurity {
    * Get this impurity instance.
    * This is useful for passing impurity parameters to a Strategy in Java.
    */
-  @Since("1.0.0")
-  def instance: this.type = this
+  def instance = this
 
 }
 
@@ -71,7 +67,7 @@ object Variance extends Impurity {
  * in order to compute impurity from a sample.
  * Note: Instances of this class do not hold the data; they operate on views of the data.
  */
-private[spark] class VarianceAggregator()
+private[tree] class VarianceAggregator()
   extends ImpurityAggregator(statsSize = 3) with Serializable {
 
   /**
@@ -93,6 +89,7 @@ private[spark] class VarianceAggregator()
   def getCalculator(allStats: Array[Double], offset: Int): VarianceCalculator = {
     new VarianceCalculator(allStats.view(offset, offset + statsSize).toArray)
   }
+
 }
 
 /**
@@ -101,11 +98,11 @@ private[spark] class VarianceAggregator()
  * (node, feature, bin).
  * @param stats  Array of sufficient statistics for a (node, feature, bin).
  */
-private[spark] class VarianceCalculator(stats: Array[Double]) extends ImpurityCalculator(stats) {
+private[tree] class VarianceCalculator(stats: Array[Double]) extends ImpurityCalculator(stats) {
 
-  require(stats.length == 3,
+  require(stats.size == 3,
     s"VarianceCalculator requires sufficient statistics array stats to be of length 3," +
-    s" but was given array of length ${stats.length}.")
+    s" but was given array of length ${stats.size}.")
 
   /**
    * Make a deep copy of this [[ImpurityCalculator]].

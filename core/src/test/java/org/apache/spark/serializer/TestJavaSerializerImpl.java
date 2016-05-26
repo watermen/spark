@@ -21,6 +21,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 
+import scala.Option;
 import scala.reflect.ClassTag;
 
 

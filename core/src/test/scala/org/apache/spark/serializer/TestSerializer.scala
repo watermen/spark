@@ -17,33 +17,30 @@
 
 package org.apache.spark.serializer
 
-import java.io.{EOFException, InputStream, OutputStream}
+import java.io.{EOFException, OutputStream, InputStream}
 import java.nio.ByteBuffer
 
 import scala.reflect.ClassTag
 
+
 /**
- * A serializer implementation that always returns two elements in a deserialization stream.
+ * A serializer implementation that always return a single element in a deserialization stream.
  */
 class TestSerializer extends Serializer {
-  override def newInstance(): TestSerializerInstance = new TestSerializerInstance
+  override def newInstance() = new TestSerializerInstance
 }
 
 
 class TestSerializerInstance extends SerializerInstance {
-  override def serialize[T: ClassTag](t: T): ByteBuffer = throw new UnsupportedOperationException
+  override def serialize[T: ClassTag](t: T): ByteBuffer = ???
 
-  override def serializeStream(s: OutputStream): SerializationStream =
-    throw new UnsupportedOperationException
+  override def serializeStream(s: OutputStream): SerializationStream = ???
 
-  override def deserializeStream(s: InputStream): TestDeserializationStream =
-    new TestDeserializationStream
+  override def deserializeStream(s: InputStream) = new TestDeserializationStream
 
-  override def deserialize[T: ClassTag](bytes: ByteBuffer): T =
-    throw new UnsupportedOperationException
+  override def deserialize[T: ClassTag](bytes: ByteBuffer): T = ???
 
-  override def deserialize[T: ClassTag](bytes: ByteBuffer, loader: ClassLoader): T =
-    throw new UnsupportedOperationException
+  override def deserialize[T: ClassTag](bytes: ByteBuffer, loader: ClassLoader): T = ???
 }
 
 
@@ -53,7 +50,7 @@ class TestDeserializationStream extends DeserializationStream {
 
   override def readObject[T: ClassTag](): T = {
     count += 1
-    if (count == 3) {
+    if (count == 2) {
       throw new EOFException
     }
     new Object().asInstanceOf[T]

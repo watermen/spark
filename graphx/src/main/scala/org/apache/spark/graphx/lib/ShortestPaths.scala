@@ -17,9 +17,8 @@
 
 package org.apache.spark.graphx.lib
 
-import scala.reflect.ClassTag
-
 import org.apache.spark.graphx._
+import scala.reflect.ClassTag
 
 /**
  * Computes shortest paths to the given set of landmark vertices, returning a graph where each
@@ -62,8 +61,8 @@ object ShortestPaths {
     }
 
     def sendMessage(edge: EdgeTriplet[SPMap, _]): Iterator[(VertexId, SPMap)] = {
-      val newAttr = incrementMap(edge.dstAttr)
-      if (edge.srcAttr != addMaps(newAttr, edge.srcAttr)) Iterator((edge.srcId, newAttr))
+      val newAttr = incrementMap(edge.srcAttr)
+      if (edge.dstAttr != addMaps(newAttr, edge.dstAttr)) Iterator((edge.dstId, newAttr))
       else Iterator.empty
     }
 

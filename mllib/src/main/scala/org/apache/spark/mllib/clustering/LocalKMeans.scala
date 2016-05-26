@@ -19,9 +19,9 @@ package org.apache.spark.mllib.clustering
 
 import scala.util.Random
 
-import org.apache.spark.internal.Logging
-import org.apache.spark.mllib.linalg.BLAS.{axpy, scal}
+import org.apache.spark.Logging
 import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.linalg.BLAS.{axpy, scal}
 
 /**
  * An utility object to run K-means locally. This is private to the ML package because it's used
@@ -46,15 +46,17 @@ private[mllib] object LocalKMeans extends Logging {
 
     // Initialize centers by sampling using the k-means++ procedure.
     centers(0) = pickWeighted(rand, points, weights).toDense
-    val costArray = points.map(KMeans.fastSquaredDistance(_, centers(0)))
-
     for (i <- 1 until k) {
-      val sum = costArray.zip(weights).map(p => p._1 * p._2).sum
+      // Pick the next center with a probability proportional to cost under current centers
+      val curCenters = centers.view.take(i)
+      val sum = points.view.zip(weights).map { case (p, w) =>
+        w * KMeans.pointCost(curCenters, p)
+      }.sum
       val r = rand.nextDouble() * sum
       var cumulativeScore = 0.0
       var j = 0
       while (j < points.length && cumulativeScore < r) {
-        cumulativeScore += weights(j) * costArray(j)
+        cumulativeScore += weights(j) * KMeans.pointCost(curCenters, points(j))
         j += 1
       }
       if (j == 0) {
@@ -64,12 +66,6 @@ private[mllib] object LocalKMeans extends Logging {
       } else {
         centers(i) = points(j - 1).toDense
       }
-
-      // update costArray
-      for (p <- points.indices) {
-        costArray(p) = math.min(KMeans.fastSquaredDistance(points(p), centers(i)), costArray(p))
-      }
-
     }
 
     // Run up to maxIterations iterations of Lloyd's algorithm

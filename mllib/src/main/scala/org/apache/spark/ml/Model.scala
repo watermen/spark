@@ -17,33 +17,24 @@
 
 package org.apache.spark.ml
 
-import org.apache.spark.annotation.DeveloperApi
+import org.apache.spark.annotation.AlphaComponent
 import org.apache.spark.ml.param.ParamMap
 
 /**
- * :: DeveloperApi ::
+ * :: AlphaComponent ::
  * A fitted model, i.e., a [[Transformer]] produced by an [[Estimator]].
  *
  * @tparam M model type
  */
-@DeveloperApi
+@AlphaComponent
 abstract class Model[M <: Model[M]] extends Transformer {
   /**
    * The parent estimator that produced this model.
-   * Note: For ensembles' component Models, this value can be null.
    */
-  @transient var parent: Estimator[M] = _
+  val parent: Estimator[M]
 
   /**
-   * Sets the parent of this model (Java API).
+   * Fitting parameters, such that parent.fit(..., fittingParamMap) could reproduce the model.
    */
-  def setParent(parent: Estimator[M]): M = {
-    this.parent = parent
-    this.asInstanceOf[M]
-  }
-
-  /** Indicates whether this [[Model]] has a corresponding parent. */
-  def hasParent: Boolean = parent != null
-
-  override def copy(extra: ParamMap): M
+  val fittingParamMap: ParamMap
 }

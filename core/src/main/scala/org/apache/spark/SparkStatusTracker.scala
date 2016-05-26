@@ -17,8 +17,6 @@
 
 package org.apache.spark
 
-import org.apache.spark.scheduler.TaskSchedulerImpl
-
 /**
  * Low-level status reporting APIs for monitoring job and stage progress.
  *
@@ -47,7 +45,8 @@ class SparkStatusTracker private[spark] (sc: SparkContext) {
    */
   def getJobIdsForGroup(jobGroup: String): Array[Int] = {
     jobProgressListener.synchronized {
-      jobProgressListener.jobGroupToJobIds.getOrElse(jobGroup, Seq.empty).toArray
+      val jobData = jobProgressListener.jobIdToData.valuesIterator
+      jobData.filter(_.jobGroup.orNull == jobGroup).map(_.jobId).toArray
     }
   }
 
@@ -104,24 +103,6 @@ class SparkStatusTracker private[spark] (sc: SparkContext) {
           data.numCompleteTasks,
           data.numFailedTasks)
       }
-    }
-  }
-
-  /**
-   * Returns information of all known executors, including host, port, cacheSize, numRunningTasks.
-   */
-  def getExecutorInfos: Array[SparkExecutorInfo] = {
-    val executorIdToRunningTasks: Map[String, Int] =
-      sc.taskScheduler.asInstanceOf[TaskSchedulerImpl].runningTasksByExecutors()
-
-    sc.getExecutorStorageStatus.map { status =>
-      val bmId = status.blockManagerId
-      new SparkExecutorInfoImpl(
-        bmId.host,
-        bmId.port,
-        status.cacheSize,
-        executorIdToRunningTasks.getOrElse(bmId.executorId, 0)
-      )
     }
   }
 }

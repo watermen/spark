@@ -22,7 +22,7 @@ package org.apache.spark.deploy
  * This state is sufficient for the Master to reconstruct its internal data structures during
  * failover.
  */
-private[deploy] class ExecutorDescription(
+private[spark] class ExecutorDescription(
     val appId: String,
     val execId: Int,
     val cores: Int,

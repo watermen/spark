@@ -20,11 +20,12 @@ package org.apache.spark.scheduler
 import java.io._
 import java.nio.ByteBuffer
 
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.Map
 
 import org.apache.spark.SparkEnv
+import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.storage.BlockId
-import org.apache.spark.util.{AccumulatorV2, Utils}
+import org.apache.spark.util.Utils
 
 // Task result. Also contains updates to accumulator variables.
 private[spark] sealed trait TaskResult[T]
@@ -34,24 +35,28 @@ private[spark] case class IndirectTaskResult[T](blockId: BlockId, size: Int)
   extends TaskResult[T] with Serializable
 
 /** A TaskResult that contains the task's return value and accumulator updates. */
-private[spark] class DirectTaskResult[T](
-    var valueBytes: ByteBuffer,
-    var accumUpdates: Seq[AccumulatorV2[_, _]])
+private[spark]
+class DirectTaskResult[T](var valueBytes: ByteBuffer, var accumUpdates: Map[Long, Any],
+    var metrics: TaskMetrics)
   extends TaskResult[T] with Externalizable {
 
-  private var valueObjectDeserialized = false
-  private var valueObject: T = _
-
-  def this() = this(null.asInstanceOf[ByteBuffer], null)
+  def this() = this(null.asInstanceOf[ByteBuffer], null, null)
 
   override def writeExternal(out: ObjectOutput): Unit = Utils.tryOrIOException {
-    out.writeInt(valueBytes.remaining)
+
+    out.writeInt(valueBytes.remaining);
     Utils.writeByteBuffer(valueBytes, out)
+
     out.writeInt(accumUpdates.size)
-    accumUpdates.foreach(out.writeObject)
+    for ((key, value) <- accumUpdates) {
+      out.writeLong(key)
+      out.writeObject(value)
+    }
+    out.writeObject(metrics)
   }
 
   override def readExternal(in: ObjectInput): Unit = Utils.tryOrIOException {
+
     val blen = in.readInt()
     val byteVal = new Array[Byte](blen)
     in.readFully(byteVal)
@@ -59,34 +64,18 @@ private[spark] class DirectTaskResult[T](
 
     val numUpdates = in.readInt
     if (numUpdates == 0) {
-      accumUpdates = Seq()
+      accumUpdates = null
     } else {
-      val _accumUpdates = new ArrayBuffer[AccumulatorV2[_, _]]
+      accumUpdates = Map()
       for (i <- 0 until numUpdates) {
-        _accumUpdates += in.readObject.asInstanceOf[AccumulatorV2[_, _]]
+        accumUpdates(in.readLong()) = in.readObject()
       }
-      accumUpdates = _accumUpdates
     }
-    valueObjectDeserialized = false
+    metrics = in.readObject().asInstanceOf[TaskMetrics]
   }
 
-  /**
-   * When `value()` is called at the first time, it needs to deserialize `valueObject` from
-   * `valueBytes`. It may cost dozens of seconds for a large instance. So when calling `value` at
-   * the first time, the caller should avoid to block other threads.
-   *
-   * After the first time, `value()` is trivial and just returns the deserialized `valueObject`.
-   */
   def value(): T = {
-    if (valueObjectDeserialized) {
-      valueObject
-    } else {
-      // This should not run when holding a lock because it may cost dozens of seconds for a large
-      // value.
-      val resultSer = SparkEnv.get.serializer.newInstance()
-      valueObject = resultSer.deserialize(valueBytes)
-      valueObjectDeserialized = true
-      valueObject
-    }
+    val resultSer = SparkEnv.get.serializer.newInstance()
+    resultSer.deserialize(valueBytes)
   }
 }

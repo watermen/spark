@@ -18,13 +18,17 @@
 package org.apache.spark.graphx.impl
 
 import scala.reflect.ClassTag
+import scala.util.Random
 
-import org.apache.spark.{SparkConf, SparkFunSuite}
-import org.apache.spark.graphx._
+import org.scalatest.FunSuite
+
+import org.apache.spark.SparkConf
 import org.apache.spark.serializer.JavaSerializer
 import org.apache.spark.serializer.KryoSerializer
 
-class EdgePartitionSuite extends SparkFunSuite {
+import org.apache.spark.graphx._
+
+class EdgePartitionSuite extends FunSuite {
 
   def makeEdgePartition[A: ClassTag](xs: Iterable[(Int, Int, A)]): EdgePartition[A, Int] = {
     val builder = new EdgePartitionBuilder[A, Int]

@@ -29,7 +29,7 @@ import org.apache.spark.annotation.DeveloperApi
 class TaskInfo(
     val taskId: Long,
     val index: Int,
-    val attemptNumber: Int,
+    val attempt: Int,
     val launchTime: Long,
     val executorId: String,
     val host: String,
@@ -81,11 +81,9 @@ class TaskInfo(
 
   def status: String = {
     if (running) {
-      if (gettingResult) {
-        "GET RESULT"
-      } else {
-        "RUNNING"
-      }
+      "RUNNING"
+    } else if (gettingResult) {
+      "GET RESULT"
     } else if (failed) {
       "FAILED"
     } else if (successful) {
@@ -95,7 +93,7 @@ class TaskInfo(
     }
   }
 
-  def id: String = s"$index.$attemptNumber"
+  def id: String = s"$index.$attempt"
 
   def duration: Long = {
     if (!finished) {

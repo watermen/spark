@@ -17,18 +17,20 @@
 
 package org.apache.spark.sql.catalyst
 
-import org.apache.spark.SparkFunSuite
-/* Implicit conversions */
-import org.apache.spark.sql.catalyst.dsl.expressions._
+import org.scalatest.FunSuite
+
 import org.apache.spark.sql.catalyst.plans.physical._
 
-class DistributionSuite extends SparkFunSuite {
+/* Implicit conversions */
+import org.apache.spark.sql.catalyst.dsl.expressions._
+
+class DistributionSuite extends FunSuite {
 
   protected def checkSatisfied(
       inputPartitioning: Partitioning,
       requiredDistribution: Distribution,
       satisfied: Boolean) {
-    if (inputPartitioning.satisfies(requiredDistribution) != satisfied) {
+    if (inputPartitioning.satisfies(requiredDistribution) != satisfied)
       fail(
         s"""
         |== Input Partitioning ==
@@ -38,10 +40,9 @@ class DistributionSuite extends SparkFunSuite {
         |== Does input partitioning satisfy required distribution? ==
         |Expected $satisfied got ${inputPartitioning.satisfies(requiredDistribution)}
         """.stripMargin)
-    }
   }
 
-  test("HashPartitioning (with nullSafe = true) is the output partitioning") {
+  test("HashPartitioning is the output partitioning") {
     // Cases which do not need an exchange between two data properties.
     checkSatisfied(
       HashPartitioning(Seq('a, 'b, 'c), 10),

@@ -13,7 +13,7 @@ import scala.tools.nsc.interpreter._
 import scala.reflect.internal.util.BatchSourceFile
 import scala.tools.nsc.ast.parser.Tokens.EOF
 
-import org.apache.spark.internal.Logging
+import org.apache.spark.Logging
 
 private[repl] trait SparkExprTyper extends Logging {
   val repl: SparkIMain

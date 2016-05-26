@@ -17,6 +17,7 @@ rem See the License for the specific language governing permissions and
 rem limitations under the License.
 rem
 
-set SPARK_HOME=%~dp0..
-set _SPARK_CMD_USAGE=Usage: ./bin/run-example [options] example-class [example args]
-cmd /V /E /C "%~dp0spark-submit.cmd" run-example %*
+rem This is the entry point for running a Spark example. To avoid polluting
+rem the environment, it just launches a new cmd to do the real work.
+
+cmd /V /E /C %~dp0run-example2.cmd %*

@@ -17,11 +17,16 @@
 
 package org.apache.spark.graphx.lib
 
-import org.apache.spark.SparkFunSuite
+import org.scalatest.FunSuite
+
+import org.apache.spark.SparkContext
+import org.apache.spark.SparkContext._
 import org.apache.spark.graphx._
+import org.apache.spark.graphx.util.GraphGenerators
+import org.apache.spark.rdd._
 
 
-class StronglyConnectedComponentsSuite extends SparkFunSuite with LocalSparkContext {
+class StronglyConnectedComponentsSuite extends FunSuite with LocalSparkContext {
 
   test("Island Strongly Connected Components") {
     withSpark { sc =>
@@ -29,8 +34,8 @@ class StronglyConnectedComponentsSuite extends SparkFunSuite with LocalSparkCont
       val edges = sc.parallelize(Seq.empty[Edge[Int]])
       val graph = Graph(vertices, edges)
       val sccGraph = graph.stronglyConnectedComponents(5)
-      for ((id, scc) <- sccGraph.vertices.collect()) {
-        assert(id === scc)
+      for ((id, scc) <- sccGraph.vertices.collect) {
+        assert(id == scc)
       }
     }
   }
@@ -40,8 +45,8 @@ class StronglyConnectedComponentsSuite extends SparkFunSuite with LocalSparkCont
       val rawEdges = sc.parallelize((0L to 6L).map(x => (x, (x + 1) % 7)))
       val graph = Graph.fromEdgeTuples(rawEdges, -1)
       val sccGraph = graph.stronglyConnectedComponents(20)
-      for ((id, scc) <- sccGraph.vertices.collect()) {
-        assert(0L === scc)
+      for ((id, scc) <- sccGraph.vertices.collect) {
+        assert(0L == scc)
       }
     }
   }
@@ -55,14 +60,13 @@ class StronglyConnectedComponentsSuite extends SparkFunSuite with LocalSparkCont
       val rawEdges = sc.parallelize(edges)
       val graph = Graph.fromEdgeTuples(rawEdges, -1)
       val sccGraph = graph.stronglyConnectedComponents(20)
-      for ((id, scc) <- sccGraph.vertices.collect()) {
-        if (id < 3) {
-          assert(0L === scc)
-        } else if (id < 6) {
-          assert(3L === scc)
-        } else {
-          assert(id === scc)
-        }
+      for ((id, scc) <- sccGraph.vertices.collect) {
+        if (id < 3)
+          assert(0L == scc)
+        else if (id < 6)
+          assert(3L == scc)
+        else
+          assert(id == scc)
       }
     }
   }

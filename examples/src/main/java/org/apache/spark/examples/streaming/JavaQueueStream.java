@@ -30,6 +30,7 @@ import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFunction;
+import org.apache.spark.examples.streaming.StreamingExamples;
 import org.apache.spark.streaming.Duration;
 import org.apache.spark.streaming.api.java.JavaDStream;
 import org.apache.spark.streaming.api.java.JavaPairDStream;
@@ -49,7 +50,7 @@ public final class JavaQueueStream {
 
     // Create the queue through which RDDs can be pushed to
     // a QueueInputDStream
-    Queue<JavaRDD<Integer>> rddQueue = new LinkedList<>();
+    Queue<JavaRDD<Integer>> rddQueue = new LinkedList<JavaRDD<Integer>>();
 
     // Create and push some RDDs into the queue
     List<Integer> list = Lists.newArrayList();
@@ -67,7 +68,7 @@ public final class JavaQueueStream {
         new PairFunction<Integer, Integer, Integer>() {
           @Override
           public Tuple2<Integer, Integer> call(Integer i) {
-            return new Tuple2<>(i % 10, 1);
+            return new Tuple2<Integer, Integer>(i % 10, 1);
           }
         });
     JavaPairDStream<Integer, Integer> reducedStream = mappedStream.reduceByKey(

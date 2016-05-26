@@ -19,11 +19,11 @@ package org.apache.spark.broadcast
 
 import java.io.Serializable
 
-import scala.reflect.ClassTag
-
 import org.apache.spark.SparkException
-import org.apache.spark.internal.Logging
+import org.apache.spark.Logging
 import org.apache.spark.util.Utils
+
+import scala.reflect.ClassTag
 
 /**
  * A broadcast variable. Broadcast variables allow the programmer to keep a read-only variable
@@ -146,5 +146,5 @@ abstract class Broadcast[T: ClassTag](val id: Long) extends Serializable with Lo
     }
   }
 
-  override def toString: String = "Broadcast(" + id + ")"
+  override def toString = "Broadcast(" + id + ")"
 }

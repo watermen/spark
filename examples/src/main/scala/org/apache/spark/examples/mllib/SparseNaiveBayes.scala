@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off println
 package org.apache.spark.examples.mllib
 
 import org.apache.log4j.{Level, Logger}
@@ -101,4 +100,3 @@ object SparseNaiveBayes {
     sc.stop()
   }
 }
-// scalastyle:on println

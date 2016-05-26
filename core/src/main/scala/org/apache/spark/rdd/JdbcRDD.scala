@@ -21,17 +21,15 @@ import java.sql.{Connection, ResultSet}
 
 import scala.reflect.ClassTag
 
-import org.apache.spark.{Partition, SparkContext, TaskContext}
-import org.apache.spark.api.java.{JavaRDD, JavaSparkContext}
 import org.apache.spark.api.java.JavaSparkContext.fakeClassTag
 import org.apache.spark.api.java.function.{Function => JFunction}
-import org.apache.spark.internal.Logging
+import org.apache.spark.api.java.{JavaRDD, JavaSparkContext}
 import org.apache.spark.util.NextIterator
+import org.apache.spark.{Logging, Partition, SparkContext, TaskContext}
 
 private[spark] class JdbcPartition(idx: Int, val lower: Long, val upper: Long) extends Partition {
-  override def index: Int = idx
+  override def index = idx
 }
-
 // TODO: Expose a jdbcRDD function in SparkContext and mark this as semi-private
 /**
  * An RDD that executes an SQL query on a JDBC connection and reads results.
@@ -64,16 +62,15 @@ class JdbcRDD[T: ClassTag](
 
   override def getPartitions: Array[Partition] = {
     // bounds are inclusive, hence the + 1 here and - 1 on end
-    val length = BigInt(1) + upperBound - lowerBound
-    (0 until numPartitions).map { i =>
-      val start = lowerBound + ((i * length) / numPartitions)
-      val end = lowerBound + (((i + 1) * length) / numPartitions) - 1
-      new JdbcPartition(i, start.toLong, end.toLong)
-    }.toArray
+    val length = 1 + upperBound - lowerBound
+    (0 until numPartitions).map(i => {
+      val start = lowerBound + ((i * length) / numPartitions).toLong
+      val end = lowerBound + (((i + 1) * length) / numPartitions).toLong - 1
+      new JdbcPartition(i, start, end)
+    }).toArray
   }
 
-  override def compute(thePart: Partition, context: TaskContext): Iterator[T] = new NextIterator[T]
-  {
+  override def compute(thePart: Partition, context: TaskContext) = new NextIterator[T] {
     context.addTaskCompletionListener{ context => closeIfNeeded() }
     val part = thePart.asInstanceOf[JdbcPartition]
     val conn = getConnection()
@@ -91,7 +88,7 @@ class JdbcRDD[T: ClassTag](
     stmt.setLong(2, part.upper)
     val rs = stmt.executeQuery()
 
-    override def getNext(): T = {
+    override def getNext: T = {
       if (rs.next()) {
         mapRow(rs)
       } else {
@@ -102,21 +99,21 @@ class JdbcRDD[T: ClassTag](
 
     override def close() {
       try {
-        if (null != rs) {
+        if (null != rs && ! rs.isClosed()) {
           rs.close()
         }
       } catch {
         case e: Exception => logWarning("Exception closing resultset", e)
       }
       try {
-        if (null != stmt) {
+        if (null != stmt && ! stmt.isClosed()) {
           stmt.close()
         }
       } catch {
         case e: Exception => logWarning("Exception closing statement", e)
       }
       try {
-        if (null != conn) {
+        if (null != conn && ! conn.isClosed()) {
           conn.close()
         }
         logInfo("closed connection")

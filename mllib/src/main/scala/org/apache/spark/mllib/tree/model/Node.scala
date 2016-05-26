@@ -17,10 +17,10 @@
 
 package org.apache.spark.mllib.tree.model
 
-import org.apache.spark.annotation.{DeveloperApi, Since}
-import org.apache.spark.internal.Logging
-import org.apache.spark.mllib.linalg.Vector
+import org.apache.spark.annotation.DeveloperApi
+import org.apache.spark.Logging
 import org.apache.spark.mllib.tree.configuration.FeatureType._
+import org.apache.spark.mllib.linalg.Vector
 
 /**
  * :: DeveloperApi ::
@@ -39,21 +39,38 @@ import org.apache.spark.mllib.tree.configuration.FeatureType._
  * @param rightNode right child
  * @param stats information gain stats
  */
-@Since("1.0.0")
 @DeveloperApi
-class Node @Since("1.2.0") (
-    @Since("1.0.0") val id: Int,
-    @Since("1.0.0") var predict: Predict,
-    @Since("1.2.0") var impurity: Double,
-    @Since("1.0.0") var isLeaf: Boolean,
-    @Since("1.0.0") var split: Option[Split],
-    @Since("1.0.0") var leftNode: Option[Node],
-    @Since("1.0.0") var rightNode: Option[Node],
-    @Since("1.0.0") var stats: Option[InformationGainStats]) extends Serializable with Logging {
+class Node (
+    val id: Int,
+    var predict: Predict,
+    var impurity: Double,
+    var isLeaf: Boolean,
+    var split: Option[Split],
+    var leftNode: Option[Node],
+    var rightNode: Option[Node],
+    var stats: Option[InformationGainStats]) extends Serializable with Logging {
 
-  override def toString: String = {
-    s"id = $id, isLeaf = $isLeaf, predict = $predict, impurity = $impurity, " +
-      s"split = $split, stats = $stats"
+  override def toString = "id = " + id + ", isLeaf = " + isLeaf + ", predict = " + predict + ", " +
+    "impurity =  " + impurity + "split = " + split + ", stats = " + stats
+
+  /**
+   * build the left node and right nodes if not leaf
+   * @param nodes array of nodes
+   */
+  @deprecated("build should no longer be used since trees are constructed on-the-fly in training",
+    "1.2.0")
+  def build(nodes: Array[Node]): Unit = {
+    logDebug("building node " + id + " at level " + Node.indexToLevel(id))
+    logDebug("id = " + id + ", split = " + split)
+    logDebug("stats = " + stats)
+    logDebug("predict = " + predict)
+    logDebug("impurity = " + impurity)
+    if (!isLeaf) {
+      leftNode = Some(nodes(Node.leftChildIndex(id)))
+      rightNode = Some(nodes(Node.rightChildIndex(id)))
+      leftNode.get.build(nodes)
+      rightNode.get.build(nodes)
+    }
   }
 
   /**
@@ -61,11 +78,10 @@ class Node @Since("1.2.0") (
    * @param features feature value
    * @return predicted value
    */
-  @Since("1.1.0")
-  def predict(features: Vector): Double = {
+  def predict(features: Vector) : Double = {
     if (isLeaf) {
       predict.predict
-    } else {
+    } else{
       if (split.get.featureType == Continuous) {
         if (features(split.get.feature) <= split.get.threshold) {
           leftNode.get.predict(features)
@@ -133,9 +149,9 @@ class Node @Since("1.2.0") (
           s"(feature ${split.feature} > ${split.threshold})"
         }
         case Categorical => if (left) {
-          s"(feature ${split.feature} in ${split.categories.mkString("{", ",", "}")})"
+          s"(feature ${split.feature} in ${split.categories.mkString("{",",","}")})"
         } else {
-          s"(feature ${split.feature} not in ${split.categories.mkString("{", ",", "}")})"
+          s"(feature ${split.feature} not in ${split.categories.mkString("{",",","}")})"
         }
       }
     }
@@ -143,21 +159,16 @@ class Node @Since("1.2.0") (
     if (isLeaf) {
       prefix + s"Predict: ${predict.predict}\n"
     } else {
-      prefix + s"If ${splitToString(split.get, left = true)}\n" +
+      prefix + s"If ${splitToString(split.get, left=true)}\n" +
         leftNode.get.subtreeToString(indentFactor + 1) +
-        prefix + s"Else ${splitToString(split.get, left = false)}\n" +
+        prefix + s"Else ${splitToString(split.get, left=false)}\n" +
         rightNode.get.subtreeToString(indentFactor + 1)
     }
   }
 
-  /** Returns an iterator that traverses (DFS, left to right) the subtree of this node. */
-  private[tree] def subtreeIterator: Iterator[Node] = {
-    Iterator.single(this) ++ leftNode.map(_.subtreeIterator).getOrElse(Iterator.empty) ++
-      rightNode.map(_.subtreeIterator).getOrElse(Iterator.empty)
-  }
 }
 
-private[spark] object Node {
+private[tree] object Node {
 
   /**
    * Return a node with the given node id (but nothing else set).

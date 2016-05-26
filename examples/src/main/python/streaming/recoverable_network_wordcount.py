@@ -35,7 +35,6 @@
  checkpoint data exists in ~/checkpoint/, then it will create StreamingContext from
  the checkpoint data.
 """
-from __future__ import print_function
 
 import os
 import sys
@@ -44,24 +43,10 @@ from pyspark import SparkContext
 from pyspark.streaming import StreamingContext
 
 
-# Get or register a Broadcast variable
-def getWordBlacklist(sparkContext):
-    if ('wordBlacklist' not in globals()):
-        globals()['wordBlacklist'] = sparkContext.broadcast(["a", "b", "c"])
-    return globals()['wordBlacklist']
-
-
-# Get or register an Accumulator
-def getDroppedWordsCounter(sparkContext):
-    if ('droppedWordsCounter' not in globals()):
-        globals()['droppedWordsCounter'] = sparkContext.accumulator(0)
-    return globals()['droppedWordsCounter']
-
-
 def createContext(host, port, outputPath):
     # If you do not see this printed, that means the StreamingContext has been loaded
     # from the new checkpoint
-    print("Creating new context")
+    print "Creating new context"
     if os.path.exists(outputPath):
         os.remove(outputPath)
     sc = SparkContext(appName="PythonStreamingRecoverableNetworkWordCount")
@@ -74,23 +59,9 @@ def createContext(host, port, outputPath):
     wordCounts = words.map(lambda x: (x, 1)).reduceByKey(lambda x, y: x + y)
 
     def echo(time, rdd):
-        # Get or register the blacklist Broadcast
-        blacklist = getWordBlacklist(rdd.context)
-        # Get or register the droppedWordsCounter Accumulator
-        droppedWordsCounter = getDroppedWordsCounter(rdd.context)
-
-        # Use blacklist to drop words and use droppedWordsCounter to count them
-        def filterFunc(wordCount):
-            if wordCount[0] in blacklist.value:
-                droppedWordsCounter.add(wordCount[1])
-                False
-            else:
-                True
-
-        counts = "Counts at time %s %s" % (time, rdd.filter(filterFunc).collect())
-        print(counts)
-        print("Dropped %d word(s) totally" % droppedWordsCounter.value)
-        print("Appending to " + os.path.abspath(outputPath))
+        counts = "Counts at time %s %s" % (time, rdd.collect())
+        print counts
+        print "Appending to " + os.path.abspath(outputPath)
         with open(outputPath, 'a') as f:
             f.write(counts + "\n")
 
@@ -99,8 +70,8 @@ def createContext(host, port, outputPath):
 
 if __name__ == "__main__":
     if len(sys.argv) != 5:
-        print("Usage: recoverable_network_wordcount.py <hostname> <port> "
-              "<checkpoint-directory> <output-file>", file=sys.stderr)
+        print >> sys.stderr, "Usage: recoverable_network_wordcount.py <hostname> <port> "\
+                             "<checkpoint-directory> <output-file>"
         exit(-1)
     host, port, checkpoint, output = sys.argv[1:]
     ssc = StreamingContext.getOrCreate(checkpoint,

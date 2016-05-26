@@ -20,11 +20,11 @@ package org.apache.spark.util.collection
 import java.lang.{Float => JFloat, Integer => JInteger}
 import java.util.{Arrays, Comparator}
 
-import org.apache.spark.SparkFunSuite
-import org.apache.spark.internal.Logging
+import org.scalatest.FunSuite
+
 import org.apache.spark.util.random.XORShiftRandom
 
-class SorterSuite extends SparkFunSuite with Logging {
+class SorterSuite extends FunSuite {
 
   test("equivalent to Arrays.sort") {
     val rand = new XORShiftRandom(123)
@@ -65,17 +65,10 @@ class SorterSuite extends SparkFunSuite with Logging {
     }
   }
 
-  // http://www.envisage-project.eu/timsort-specification-and-verification/
-  test("SPARK-5984 TimSort bug") {
-    val data = TestTimSort.getTimSortBugTestSet(67108864)
-    new Sorter(new IntArraySortDataFormat).sort(data, 0, data.length, Ordering.Int)
-    (0 to data.length - 2).foreach(i => assert(data(i) <= data(i + 1)))
-  }
-
   /** Runs an experiment several times. */
   def runExperiment(name: String, skip: Boolean = false)(f: => Unit, prepare: () => Unit): Unit = {
     if (skip) {
-      logInfo(s"Skipped experiment $name.")
+      println(s"Skipped experiment $name.")
       return
     }
 
@@ -87,11 +80,11 @@ class SorterSuite extends SparkFunSuite with Logging {
     while (i < 10) {
       val time = org.apache.spark.util.Utils.timeIt(1)(f, Some(prepare))
       next10 += time
-      logInfo(s"$name: Took $time ms")
+      println(s"$name: Took $time ms")
       i += 1
     }
 
-    logInfo(s"$name: ($firstTry ms first try, ${next10 / 10} ms average)")
+    println(s"$name: ($firstTry ms first try, ${next10 / 10} ms average)")
   }
 
   /**
@@ -104,6 +97,9 @@ class SorterSuite extends SparkFunSuite with Logging {
    * has the keys and values alternating. The basic Java sorts work only on the keys, so the
    * real Java solution is to make Tuple2s to store the keys and values and sort an array of
    * those, while the Sorter approach can work directly on the input data format.
+   *
+   * Note that the Java implementation varies tremendously between Java 6 and Java 7, when
+   * the Java sort changed from merge sort to TimSort.
    */
   ignore("Sorter benchmark for key-value pairs") {
     val numElements = 25000000 // 25 mil

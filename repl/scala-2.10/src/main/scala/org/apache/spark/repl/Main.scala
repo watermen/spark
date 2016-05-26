@@ -17,12 +17,9 @@
 
 package org.apache.spark.repl
 
-import org.apache.spark.internal.Logging
+import scala.collection.mutable.Set
 
-object Main extends Logging {
-
-  initializeLogIfNecessary(true)
-
+object Main {
   private var _interp: SparkILoop = _
 
   def interp = _interp

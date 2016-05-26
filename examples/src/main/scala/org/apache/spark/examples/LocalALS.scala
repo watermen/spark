@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off println
 package org.apache.spark.examples
 
 import org.apache.commons.math3.linear._
@@ -24,7 +23,7 @@ import org.apache.commons.math3.linear._
  * Alternating least squares matrix factorization.
  *
  * This is an example implementation for learning how to use Spark. For more conventional use,
- * please refer to org.apache.spark.ml.recommendation.ALS.
+ * please refer to org.apache.spark.mllib.recommendation.ALS
  */
 object LocalALS {
 
@@ -96,7 +95,7 @@ object LocalALS {
   def showWarning() {
     System.err.println(
       """WARN: This is a naive implementation of ALS and is given as an example!
-        |Please use org.apache.spark.ml.recommendation.ALS
+        |Please use the ALS method found in org.apache.spark.mllib.recommendation
         |for more conventional use.
       """.stripMargin)
   }
@@ -104,14 +103,16 @@ object LocalALS {
   def main(args: Array[String]) {
 
     args match {
-      case Array(m, u, f, iters) =>
+      case Array(m, u, f, iters) => {
         M = m.toInt
         U = u.toInt
         F = f.toInt
         ITERATIONS = iters.toInt
-      case _ =>
+      }
+      case _ => {
         System.err.println("Usage: LocalALS <M> <U> <F> <iters>")
         System.exit(1)
+      }
     }
 
     showWarning()
@@ -141,4 +142,3 @@ object LocalALS {
     new Array2DRowRealMatrix(Array.fill(rows, cols)(math.random))
 
 }
-// scalastyle:on println

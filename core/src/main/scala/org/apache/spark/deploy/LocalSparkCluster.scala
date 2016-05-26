@@ -19,11 +19,11 @@ package org.apache.spark.deploy
 
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.SparkConf
-import org.apache.spark.deploy.master.Master
+import akka.actor.ActorSystem
+
+import org.apache.spark.{Logging, SparkConf}
 import org.apache.spark.deploy.worker.Worker
-import org.apache.spark.internal.Logging
-import org.apache.spark.rpc.RpcEnv
+import org.apache.spark.deploy.master.Master
 import org.apache.spark.util.Utils
 
 /**
@@ -33,39 +33,28 @@ import org.apache.spark.util.Utils
  * fault recovery without spinning up a lot of processes.
  */
 private[spark]
-class LocalSparkCluster(
-    numWorkers: Int,
-    coresPerWorker: Int,
-    memoryPerWorker: Int,
-    conf: SparkConf)
+class LocalSparkCluster(numWorkers: Int, coresPerWorker: Int, memoryPerWorker: Int)
   extends Logging {
 
   private val localHostname = Utils.localHostName()
-  private val masterRpcEnvs = ArrayBuffer[RpcEnv]()
-  private val workerRpcEnvs = ArrayBuffer[RpcEnv]()
-  // exposed for testing
-  var masterWebUIPort = -1
+  private val masterActorSystems = ArrayBuffer[ActorSystem]()
+  private val workerActorSystems = ArrayBuffer[ActorSystem]()
 
   def start(): Array[String] = {
     logInfo("Starting a local Spark cluster with " + numWorkers + " workers.")
 
-    // Disable REST server on Master in this mode unless otherwise specified
-    val _conf = conf.clone()
-      .setIfMissing("spark.master.rest.enabled", "false")
-      .set("spark.shuffle.service.enabled", "false")
-
     /* Start the Master */
-    val (rpcEnv, webUiPort, _) = Master.startRpcEnvAndEndpoint(localHostname, 0, 0, _conf)
-    masterWebUIPort = webUiPort
-    masterRpcEnvs += rpcEnv
-    val masterUrl = "spark://" + Utils.localHostNameForURI() + ":" + rpcEnv.address.port
+    val conf = new SparkConf(false)
+    val (masterSystem, masterPort, _) = Master.startSystemAndActor(localHostname, 0, 0, conf)
+    masterActorSystems += masterSystem
+    val masterUrl = "spark://" + localHostname + ":" + masterPort
     val masters = Array(masterUrl)
 
     /* Start the Workers */
     for (workerNum <- 1 to numWorkers) {
-      val workerEnv = Worker.startRpcEnvAndEndpoint(localHostname, 0, 0, coresPerWorker,
-        memoryPerWorker, masters, null, Some(workerNum), _conf)
-      workerRpcEnvs += workerEnv
+      val (workerSystem, _) = Worker.startSystemAndActor(localHostname, 0, 0, coresPerWorker,
+        memoryPerWorker, masters, null, Some(workerNum))
+      workerActorSystems += workerSystem
     }
 
     masters
@@ -74,11 +63,13 @@ class LocalSparkCluster(
   def stop() {
     logInfo("Shutting down local Spark cluster.")
     // Stop the workers before the master so they don't get upset that it disconnected
-    workerRpcEnvs.foreach(_.shutdown())
-    masterRpcEnvs.foreach(_.shutdown())
-    workerRpcEnvs.foreach(_.awaitTermination())
-    masterRpcEnvs.foreach(_.awaitTermination())
-    masterRpcEnvs.clear()
-    workerRpcEnvs.clear()
+    // TODO: In Akka 2.1.x, ActorSystem.awaitTermination hangs when you have remote actors!
+    //       This is unfortunate, but for now we just comment it out.
+    workerActorSystems.foreach(_.shutdown())
+    // workerActorSystems.foreach(_.awaitTermination())
+    masterActorSystems.foreach(_.shutdown())
+    // masterActorSystems.foreach(_.awaitTermination())
+    masterActorSystems.clear()
+    workerActorSystems.clear()
   }
 }

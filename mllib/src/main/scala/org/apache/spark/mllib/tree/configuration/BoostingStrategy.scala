@@ -19,11 +19,12 @@ package org.apache.spark.mllib.tree.configuration
 
 import scala.beans.BeanProperty
 
-import org.apache.spark.annotation.Since
+import org.apache.spark.annotation.Experimental
 import org.apache.spark.mllib.tree.configuration.Algo._
-import org.apache.spark.mllib.tree.loss.{LogLoss, Loss, SquaredError}
+import org.apache.spark.mllib.tree.loss.{LogLoss, SquaredError, Loss}
 
 /**
+ * :: Experimental ::
  * Configuration options for [[org.apache.spark.mllib.tree.GradientBoostedTrees]].
  *
  * @param treeStrategy Parameters for the tree algorithm. We support regression and binary
@@ -33,33 +34,21 @@ import org.apache.spark.mllib.tree.loss.{LogLoss, Loss, SquaredError}
  *                      weak hypotheses used in the final model.
  * @param learningRate Learning rate for shrinking the contribution of each estimator. The
  *                     learning rate should be between in the interval (0, 1]
- * @param validationTol validationTol is a condition which decides iteration termination when
- *                      runWithValidation is used.
- *                      The end of iteration is decided based on below logic:
- *                      If the current loss on the validation set is > 0.01, the diff
- *                      of validation error is compared to relative tolerance which is
- *                      validationTol * (current loss on the validation set).
- *                      If the current loss on the validation set is <= 0.01, the diff
- *                      of validation error is compared to absolute tolerance which is
- *                      validationTol * 0.01.
- *                      Ignored when
- *                      [[org.apache.spark.mllib.tree.GradientBoostedTrees.run()]] is used.
  */
-@Since("1.2.0")
-case class BoostingStrategy @Since("1.4.0") (
+@Experimental
+case class BoostingStrategy(
     // Required boosting parameters
-    @Since("1.2.0") @BeanProperty var treeStrategy: Strategy,
-    @Since("1.2.0") @BeanProperty var loss: Loss,
+    @BeanProperty var treeStrategy: Strategy,
+    @BeanProperty var loss: Loss,
     // Optional boosting parameters
-    @Since("1.2.0") @BeanProperty var numIterations: Int = 100,
-    @Since("1.2.0") @BeanProperty var learningRate: Double = 0.1,
-    @Since("1.4.0") @BeanProperty var validationTol: Double = 0.001) extends Serializable {
+    @BeanProperty var numIterations: Int = 100,
+    @BeanProperty var learningRate: Double = 0.1) extends Serializable {
 
   /**
    * Check validity of parameters.
    * Throws exception if invalid.
    */
-  private[spark] def assertValid(): Unit = {
+  private[tree] def assertValid(): Unit = {
     treeStrategy.algo match {
       case Classification =>
         require(treeStrategy.numClasses == 2,
@@ -76,7 +65,7 @@ case class BoostingStrategy @Since("1.4.0") (
   }
 }
 
-@Since("1.2.0")
+@Experimental
 object BoostingStrategy {
 
   /**
@@ -84,7 +73,6 @@ object BoostingStrategy {
    * @param algo Learning goal.  Supported: "Classification" or "Regression"
    * @return Configuration for boosting algorithm
    */
-  @Since("1.2.0")
   def defaultParams(algo: String): BoostingStrategy = {
     defaultParams(Algo.fromString(algo))
   }
@@ -96,16 +84,15 @@ object BoostingStrategy {
    *             [[org.apache.spark.mllib.tree.configuration.Algo.Regression]]
    * @return Configuration for boosting algorithm
    */
-  @Since("1.3.0")
   def defaultParams(algo: Algo): BoostingStrategy = {
-    val treeStrategy = Strategy.defaultStrategy(algo)
-    treeStrategy.maxDepth = 3
+    val treeStragtegy = Strategy.defaultStategy(algo)
+    treeStragtegy.maxDepth = 3
     algo match {
       case Algo.Classification =>
-        treeStrategy.numClasses = 2
-        new BoostingStrategy(treeStrategy, LogLoss)
+        treeStragtegy.numClasses = 2
+        new BoostingStrategy(treeStragtegy, LogLoss)
       case Algo.Regression =>
-        new BoostingStrategy(treeStrategy, SquaredError)
+        new BoostingStrategy(treeStragtegy, SquaredError)
       case _ =>
         throw new IllegalArgumentException(s"$algo is not supported by boosting.")
     }

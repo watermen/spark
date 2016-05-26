@@ -17,8 +17,6 @@
 
 package org.apache.spark.ui
 
-import java.util.concurrent.Semaphore
-
 import scala.util.Random
 
 import org.apache.spark.{SparkConf, SparkContext}
@@ -38,11 +36,9 @@ private[spark] object UIWorkloadGenerator {
 
   def main(args: Array[String]) {
     if (args.length < 3) {
-      // scalastyle:off println
       println(
-        "Usage: ./bin/spark-class org.apache.spark.ui.UIWorkloadGenerator " +
+        "usage: ./bin/spark-class org.apache.spark.ui.UIWorkloadGenerator " +
           "[master] [FIFO|FAIR] [#job set (4 jobs per set)]")
-      // scalastyle:on println
       System.exit(1)
     }
 
@@ -55,15 +51,15 @@ private[spark] object UIWorkloadGenerator {
     val nJobSet = args(2).toInt
     val sc = new SparkContext(conf)
 
-    def setProperties(s: String): Unit = {
-      if (schedulingMode == SchedulingMode.FAIR) {
+    def setProperties(s: String) = {
+      if(schedulingMode == SchedulingMode.FAIR) {
         sc.setLocalProperty("spark.scheduler.pool", s)
       }
       sc.setLocalProperty(SparkContext.SPARK_JOB_DESCRIPTION, s)
     }
 
     val baseData = sc.makeRDD(1 to NUM_PARTITIONS * 10, NUM_PARTITIONS)
-    def nextFloat(): Float = new Random().nextFloat()
+    def nextFloat() = new Random().nextFloat()
 
     val jobs = Seq[(String, () => Long)](
       ("Count", baseData.count),
@@ -92,32 +88,23 @@ private[spark] object UIWorkloadGenerator {
       ("Job with delays", baseData.map(x => Thread.sleep(100)).count)
     )
 
-    val barrier = new Semaphore(-nJobSet * jobs.size + 1)
-
     (1 to nJobSet).foreach { _ =>
       for ((desc, job) <- jobs) {
         new Thread {
           override def run() {
-            // scalastyle:off println
             try {
               setProperties(desc)
               job()
-              println("Job finished: " + desc)
+              println("Job funished: " + desc)
             } catch {
               case e: Exception =>
                 println("Job Failed: " + desc)
-            } finally {
-              barrier.release()
             }
-            // scalastyle:on println
           }
         }.start
         Thread.sleep(INTER_JOB_WAIT_MS)
       }
     }
-
-    // Waiting for threads.
-    barrier.acquire()
     sc.stop()
   }
 }

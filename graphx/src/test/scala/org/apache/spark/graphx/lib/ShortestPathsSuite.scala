@@ -17,10 +17,16 @@
 
 package org.apache.spark.graphx.lib
 
-import org.apache.spark.SparkFunSuite
-import org.apache.spark.graphx._
+import org.scalatest.FunSuite
 
-class ShortestPathsSuite extends SparkFunSuite with LocalSparkContext {
+import org.apache.spark.SparkContext
+import org.apache.spark.SparkContext._
+import org.apache.spark.graphx._
+import org.apache.spark.graphx.lib._
+import org.apache.spark.graphx.util.GraphGenerators
+import org.apache.spark.rdd._
+
+class ShortestPathsSuite extends FunSuite with LocalSparkContext {
 
   test("Shortest Path Computations") {
     withSpark { sc =>
@@ -34,7 +40,7 @@ class ShortestPathsSuite extends SparkFunSuite with LocalSparkContext {
       val graph = Graph.fromEdgeTuples(edges, 1)
       val landmarks = Seq(1, 4).map(_.toLong)
       val results = ShortestPaths.run(graph, landmarks).vertices.collect.map {
-        case (v, spMap) => (v, spMap.mapValues(i => i))
+        case (v, spMap) => (v, spMap.mapValues(_.get))
       }
       assert(results.toSet === shortestPaths)
     }

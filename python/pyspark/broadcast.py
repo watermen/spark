@@ -16,15 +16,10 @@
 #
 
 import os
-import sys
+import cPickle
 import gc
 from tempfile import NamedTemporaryFile
 
-if sys.version < '3':
-    import cPickle as pickle
-else:
-    import pickle
-    unicode = str
 
 __all__ = ['Broadcast']
 
@@ -75,19 +70,33 @@ class Broadcast(object):
             self._path = path
 
     def dump(self, value, f):
-        pickle.dump(value, f, 2)
+        if isinstance(value, basestring):
+            if isinstance(value, unicode):
+                f.write('U')
+                value = value.encode('utf8')
+            else:
+                f.write('S')
+            f.write(value)
+        else:
+            f.write('P')
+            cPickle.dump(value, f, 2)
         f.close()
         return f.name
 
     def load(self, path):
         with open(path, 'rb', 1 << 20) as f:
-            # pickle.load() may create lots of objects, disable GC
-            # temporary for better performance
-            gc.disable()
-            try:
-                return pickle.load(f)
-            finally:
-                gc.enable()
+            flag = f.read(1)
+            data = f.read()
+            if flag == 'P':
+                # cPickle.loads() may create lots of objects, disable GC
+                # temporary for better performance
+                gc.disable()
+                try:
+                    return cPickle.loads(data)
+                finally:
+                    gc.enable()
+            else:
+                return data.decode('utf8') if flag == 'U' else data
 
     @property
     def value(self):
@@ -99,26 +108,11 @@ class Broadcast(object):
 
     def unpersist(self, blocking=False):
         """
-        Delete cached copies of this broadcast on the executors. If the
-        broadcast is used after this is called, it will need to be
-        re-sent to each executor.
-
-        :param blocking: Whether to block until unpersisting has completed
+        Delete cached copies of this broadcast on the executors.
         """
         if self._jbroadcast is None:
             raise Exception("Broadcast can only be unpersisted in driver")
         self._jbroadcast.unpersist(blocking)
-
-    def destroy(self):
-        """
-        Destroy all data and metadata related to this broadcast variable.
-        Use this with caution; once a broadcast variable has been destroyed,
-        it cannot be used again. This method blocks until destroy has
-        completed.
-        """
-        if self._jbroadcast is None:
-            raise Exception("Broadcast can only be destroyed in driver")
-        self._jbroadcast.destroy()
         os.unlink(self._path)
 
     def __reduce__(self):
@@ -130,6 +124,4 @@ class Broadcast(object):
 
 if __name__ == "__main__":
     import doctest
-    (failure_count, test_count) = doctest.testmod()
-    if failure_count:
-        exit(-1)
+    doctest.testmod()

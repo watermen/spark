@@ -17,10 +17,12 @@
 
 package org.apache.spark.graphx.impl
 
-import scala.reflect.ClassTag
+import scala.reflect.{classTag, ClassTag}
+
+import org.apache.spark.SparkContext._
+import org.apache.spark.rdd.RDD
 
 import org.apache.spark.graphx._
-import org.apache.spark.rdd.RDD
 
 /**
  * Manages shipping vertex attributes to the edge partitions of an
@@ -40,15 +42,15 @@ class ReplicatedVertexView[VD: ClassTag, ED: ClassTag](
    * shipping level.
    */
   def withEdges[VD2: ClassTag, ED2: ClassTag](
-      _edges: EdgeRDDImpl[ED2, VD2]): ReplicatedVertexView[VD2, ED2] = {
-    new ReplicatedVertexView(_edges, hasSrcId, hasDstId)
+      edges_ : EdgeRDDImpl[ED2, VD2]): ReplicatedVertexView[VD2, ED2] = {
+    new ReplicatedVertexView(edges_, hasSrcId, hasDstId)
   }
 
   /**
    * Return a new `ReplicatedVertexView` where edges are reversed and shipping levels are swapped to
    * match.
    */
-  def reverse(): ReplicatedVertexView[VD, ED] = {
+  def reverse() = {
     val newEdges = edges.mapEdgePartitions((pid, part) => part.reverse)
     new ReplicatedVertexView(newEdges, hasDstId, hasSrcId)
   }

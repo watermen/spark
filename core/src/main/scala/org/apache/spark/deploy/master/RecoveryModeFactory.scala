@@ -17,10 +17,10 @@
 
 package org.apache.spark.deploy.master
 
-import org.apache.spark.SparkConf
+import akka.serialization.Serialization
+
+import org.apache.spark.{Logging, SparkConf}
 import org.apache.spark.annotation.DeveloperApi
-import org.apache.spark.internal.Logging
-import org.apache.spark.serializer.Serializer
 
 /**
  * ::DeveloperApi::
@@ -30,7 +30,7 @@ import org.apache.spark.serializer.Serializer
  *
  */
 @DeveloperApi
-abstract class StandaloneRecoveryModeFactory(conf: SparkConf, serializer: Serializer) {
+abstract class StandaloneRecoveryModeFactory(conf: SparkConf, serializer: Serialization) {
 
   /**
    * PersistenceEngine defines how the persistent data(Information about worker, driver etc..)
@@ -49,29 +49,22 @@ abstract class StandaloneRecoveryModeFactory(conf: SparkConf, serializer: Serial
  * LeaderAgent in this case is a no-op. Since leader is forever leader as the actual
  * recovery is made by restoring from filesystem.
  */
-private[master] class FileSystemRecoveryModeFactory(conf: SparkConf, serializer: Serializer)
+private[spark] class FileSystemRecoveryModeFactory(conf: SparkConf, serializer: Serialization)
   extends StandaloneRecoveryModeFactory(conf, serializer) with Logging {
-
   val RECOVERY_DIR = conf.get("spark.deploy.recoveryDirectory", "")
 
-  def createPersistenceEngine(): PersistenceEngine = {
+  def createPersistenceEngine() = {
     logInfo("Persisting recovery state to directory: " + RECOVERY_DIR)
     new FileSystemPersistenceEngine(RECOVERY_DIR, serializer)
   }
 
-  def createLeaderElectionAgent(master: LeaderElectable): LeaderElectionAgent = {
-    new MonarchyLeaderAgent(master)
-  }
+  def createLeaderElectionAgent(master: LeaderElectable) = new MonarchyLeaderAgent(master)
 }
 
-private[master] class ZooKeeperRecoveryModeFactory(conf: SparkConf, serializer: Serializer)
+private[spark] class ZooKeeperRecoveryModeFactory(conf: SparkConf, serializer: Serialization)
   extends StandaloneRecoveryModeFactory(conf, serializer) {
+  def createPersistenceEngine() = new ZooKeeperPersistenceEngine(conf, serializer)
 
-  def createPersistenceEngine(): PersistenceEngine = {
-    new ZooKeeperPersistenceEngine(conf, serializer)
-  }
-
-  def createLeaderElectionAgent(master: LeaderElectable): LeaderElectionAgent = {
+  def createLeaderElectionAgent(master: LeaderElectable) =
     new ZooKeeperLeaderElectionAgent(master, conf)
-  }
 }

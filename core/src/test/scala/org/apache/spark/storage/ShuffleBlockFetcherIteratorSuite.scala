@@ -17,26 +17,24 @@
 
 package org.apache.spark.storage
 
-import java.io.InputStream
 import java.util.concurrent.Semaphore
 
+import scala.concurrent.future
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
 
 import org.mockito.Matchers.{any, eq => meq}
 import org.mockito.Mockito._
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
-import org.scalatest.PrivateMethodTester
+import org.scalatest.FunSuite
 
-import org.apache.spark.{SparkFunSuite, TaskContext}
+import org.apache.spark.{SparkConf, TaskContextImpl}
 import org.apache.spark.network._
 import org.apache.spark.network.buffer.ManagedBuffer
 import org.apache.spark.network.shuffle.BlockFetchingListener
-import org.apache.spark.shuffle.FetchFailedException
+import org.apache.spark.serializer.TestSerializer
 
-
-class ShuffleBlockFetcherIteratorSuite extends SparkFunSuite with PrivateMethodTester {
+class ShuffleBlockFetcherIteratorSuite extends FunSuite {
   // Some of the tests are quite tricky because we are testing the cleanup behavior
   // in the presence of faults.
 
@@ -60,12 +58,7 @@ class ShuffleBlockFetcherIteratorSuite extends SparkFunSuite with PrivateMethodT
     transfer
   }
 
-  // Create a mock managed buffer for testing
-  def createMockManagedBuffer(): ManagedBuffer = {
-    val mockManagedBuffer = mock(classOf[ManagedBuffer])
-    when(mockManagedBuffer.createInputStream()).thenReturn(mock(classOf[InputStream]))
-    mockManagedBuffer
-  }
+  private val conf = new SparkConf
 
   test("successful 3 local reads + 2 remote reads") {
     val blockManager = mock(classOf[BlockManager])
@@ -74,9 +67,9 @@ class ShuffleBlockFetcherIteratorSuite extends SparkFunSuite with PrivateMethodT
 
     // Make sure blockManager.getBlockData would return the blocks
     val localBlocks = Map[BlockId, ManagedBuffer](
-      ShuffleBlockId(0, 0, 0) -> createMockManagedBuffer(),
-      ShuffleBlockId(0, 1, 0) -> createMockManagedBuffer(),
-      ShuffleBlockId(0, 2, 0) -> createMockManagedBuffer())
+      ShuffleBlockId(0, 0, 0) -> mock(classOf[ManagedBuffer]),
+      ShuffleBlockId(0, 1, 0) -> mock(classOf[ManagedBuffer]),
+      ShuffleBlockId(0, 2, 0) -> mock(classOf[ManagedBuffer]))
     localBlocks.foreach { case (blockId, buf) =>
       doReturn(buf).when(blockManager).getBlockData(meq(blockId))
     }
@@ -84,8 +77,9 @@ class ShuffleBlockFetcherIteratorSuite extends SparkFunSuite with PrivateMethodT
     // Make sure remote blocks would return
     val remoteBmId = BlockManagerId("test-client-1", "test-client-1", 2)
     val remoteBlocks = Map[BlockId, ManagedBuffer](
-      ShuffleBlockId(0, 3, 0) -> createMockManagedBuffer(),
-      ShuffleBlockId(0, 4, 0) -> createMockManagedBuffer())
+      ShuffleBlockId(0, 3, 0) -> mock(classOf[ManagedBuffer]),
+      ShuffleBlockId(0, 4, 0) -> mock(classOf[ManagedBuffer])
+    )
 
     val transfer = createMockTransfer(remoteBlocks)
 
@@ -95,34 +89,27 @@ class ShuffleBlockFetcherIteratorSuite extends SparkFunSuite with PrivateMethodT
     )
 
     val iterator = new ShuffleBlockFetcherIterator(
-      TaskContext.empty(),
+      new TaskContextImpl(0, 0, 0, 0),
       transfer,
       blockManager,
       blocksByAddress,
-      48 * 1024 * 1024,
-      Int.MaxValue)
+      new TestSerializer,
+      48 * 1024 * 1024)
 
     // 3 local blocks fetched in initialization
     verify(blockManager, times(3)).getBlockData(any())
 
     for (i <- 0 until 5) {
       assert(iterator.hasNext, s"iterator should have 5 elements but actually has $i elements")
-      val (blockId, inputStream) = iterator.next()
+      val (blockId, subIterator) = iterator.next()
+      assert(subIterator.isSuccess,
+        s"iterator should have 5 elements defined but actually has $i elements")
 
-      // Make sure we release buffers when a wrapped input stream is closed.
+      // Make sure we release the buffer once the iterator is exhausted.
       val mockBuf = localBlocks.getOrElse(blockId, remoteBlocks(blockId))
-      // Note: ShuffleBlockFetcherIterator wraps input streams in a BufferReleasingInputStream
-      val wrappedInputStream = inputStream.asInstanceOf[BufferReleasingInputStream]
       verify(mockBuf, times(0)).release()
-      val delegateAccess = PrivateMethod[InputStream]('delegate)
-
-      verify(wrappedInputStream.invokePrivate(delegateAccess()), times(0)).close()
-      wrappedInputStream.close()
+      subIterator.get.foreach(_ => Unit)  // exhaust the iterator
       verify(mockBuf, times(1)).release()
-      verify(wrappedInputStream.invokePrivate(delegateAccess()), times(1)).close()
-      wrappedInputStream.close() // close should be idempotent
-      verify(mockBuf, times(1)).release()
-      verify(wrappedInputStream.invokePrivate(delegateAccess()), times(1)).close()
     }
 
     // 3 local blocks, and 2 remote blocks
@@ -139,9 +126,10 @@ class ShuffleBlockFetcherIteratorSuite extends SparkFunSuite with PrivateMethodT
     // Make sure remote blocks would return
     val remoteBmId = BlockManagerId("test-client-1", "test-client-1", 2)
     val blocks = Map[BlockId, ManagedBuffer](
-      ShuffleBlockId(0, 0, 0) -> createMockManagedBuffer(),
-      ShuffleBlockId(0, 1, 0) -> createMockManagedBuffer(),
-      ShuffleBlockId(0, 2, 0) -> createMockManagedBuffer())
+      ShuffleBlockId(0, 0, 0) -> mock(classOf[ManagedBuffer]),
+      ShuffleBlockId(0, 1, 0) -> mock(classOf[ManagedBuffer]),
+      ShuffleBlockId(0, 2, 0) -> mock(classOf[ManagedBuffer])
+    )
 
     // Semaphore to coordinate event sequence in two different threads.
     val sem = new Semaphore(0)
@@ -150,7 +138,7 @@ class ShuffleBlockFetcherIteratorSuite extends SparkFunSuite with PrivateMethodT
     when(transfer.fetchBlocks(any(), any(), any(), any(), any())).thenAnswer(new Answer[Unit] {
       override def answer(invocation: InvocationOnMock): Unit = {
         val listener = invocation.getArguments()(4).asInstanceOf[BlockFetchingListener]
-        Future {
+        future {
           // Return the first two blocks, and wait till task completion before returning the 3rd one
           listener.onBlockFetchSuccess(
             ShuffleBlockId(0, 0, 0).toString, blocks(ShuffleBlockId(0, 0, 0)))
@@ -166,21 +154,21 @@ class ShuffleBlockFetcherIteratorSuite extends SparkFunSuite with PrivateMethodT
     val blocksByAddress = Seq[(BlockManagerId, Seq[(BlockId, Long)])](
       (remoteBmId, blocks.keys.map(blockId => (blockId, 1.asInstanceOf[Long])).toSeq))
 
-    val taskContext = TaskContext.empty()
+    val taskContext = new TaskContextImpl(0, 0, 0, 0)
     val iterator = new ShuffleBlockFetcherIterator(
       taskContext,
       transfer,
       blockManager,
       blocksByAddress,
-      48 * 1024 * 1024,
-      Int.MaxValue)
+      new TestSerializer,
+      48 * 1024 * 1024)
 
-    verify(blocks(ShuffleBlockId(0, 0, 0)), times(0)).release()
-    iterator.next()._2.close() // close() first block's input stream
+    // Exhaust the first block, and then it should be released.
+    iterator.next()._2.get.foreach(_ => Unit)
     verify(blocks(ShuffleBlockId(0, 0, 0)), times(1)).release()
 
     // Get the 2nd block but do not exhaust the iterator
-    val subIter = iterator.next()._2
+    val subIter = iterator.next()._2.get
 
     // Complete the task; then the 2nd block buffer should be exhausted
     verify(blocks(ShuffleBlockId(0, 1, 0)), times(0)).release()
@@ -213,7 +201,7 @@ class ShuffleBlockFetcherIteratorSuite extends SparkFunSuite with PrivateMethodT
     when(transfer.fetchBlocks(any(), any(), any(), any(), any())).thenAnswer(new Answer[Unit] {
       override def answer(invocation: InvocationOnMock): Unit = {
         val listener = invocation.getArguments()(4).asInstanceOf[BlockFetchingListener]
-        Future {
+        future {
           // Return the first block, and then fail.
           listener.onBlockFetchSuccess(
             ShuffleBlockId(0, 0, 0).toString, blocks(ShuffleBlockId(0, 0, 0)))
@@ -229,22 +217,21 @@ class ShuffleBlockFetcherIteratorSuite extends SparkFunSuite with PrivateMethodT
     val blocksByAddress = Seq[(BlockManagerId, Seq[(BlockId, Long)])](
       (remoteBmId, blocks.keys.map(blockId => (blockId, 1.asInstanceOf[Long])).toSeq))
 
-    val taskContext = TaskContext.empty()
+    val taskContext = new TaskContextImpl(0, 0, 0, 0)
     val iterator = new ShuffleBlockFetcherIterator(
       taskContext,
       transfer,
       blockManager,
       blocksByAddress,
-      48 * 1024 * 1024,
-      Int.MaxValue)
+      new TestSerializer,
+      48 * 1024 * 1024)
 
     // Continue only after the mock calls onBlockFetchFailure
     sem.acquire()
 
-    // The first block should be returned without an exception, and the last two should throw
-    // FetchFailedExceptions (due to failure)
-    iterator.next()
-    intercept[FetchFailedException] { iterator.next() }
-    intercept[FetchFailedException] { iterator.next() }
+    // The first block should be defined, and the last two are not defined (due to failure)
+    assert(iterator.next()._2.isSuccess)
+    assert(iterator.next()._2.isFailure)
+    assert(iterator.next()._2.isFailure)
   }
 }

@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off println
 package org.apache.spark.examples.streaming
 
 import org.apache.spark.SparkConf
@@ -59,4 +58,3 @@ object RawNetworkGrep {
     ssc.awaitTermination()
   }
 }
-// scalastyle:on println

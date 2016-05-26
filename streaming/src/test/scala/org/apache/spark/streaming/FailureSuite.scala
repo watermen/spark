@@ -17,44 +17,35 @@
 
 package org.apache.spark.streaming
 
-import java.io.File
-
-import org.scalatest.BeforeAndAfter
-
-import org.apache.spark._
-import org.apache.spark.internal.Logging
+import org.apache.spark.Logging
 import org.apache.spark.util.Utils
+
+import java.io.File
 
 /**
  * This testsuite tests master failures at random times while the stream is running using
  * the real clock.
  */
-class FailureSuite extends SparkFunSuite with BeforeAndAfter with Logging {
+class FailureSuite extends TestSuiteBase with Logging {
 
-  private val batchDuration: Duration = Milliseconds(1000)
-  private val numBatches = 30
-  private var directory: File = null
+  val directory = Utils.createTempDir().getAbsolutePath
+  val numBatches = 30
 
-  before {
-    directory = Utils.createTempDir()
-  }
+  override def batchDuration = Milliseconds(1000)
 
-  after {
-    if (directory != null) {
-      Utils.deleteRecursively(directory)
-    }
-    StreamingContext.getActive().foreach { _.stop() }
+  override def useManualClock = false
 
-    // Stop SparkContext if active
-    SparkContext.getOrCreate(new SparkConf().setMaster("local").setAppName("bla")).stop()
+  override def afterFunction() {
+    Utils.deleteRecursively(new File(directory))
+    super.afterFunction()
   }
 
   test("multiple failures with map") {
-    MasterFailureTest.testMap(directory.getAbsolutePath, numBatches, batchDuration)
+    MasterFailureTest.testMap(directory, numBatches, batchDuration)
   }
 
   test("multiple failures with updateStateByKey") {
-    MasterFailureTest.testUpdateStateByKey(directory.getAbsolutePath, numBatches, batchDuration)
+    MasterFailureTest.testUpdateStateByKey(directory, numBatches, batchDuration)
   }
 }
 

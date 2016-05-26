@@ -22,8 +22,7 @@ import java.util.{NoSuchElementException, Properties}
 
 import scala.xml.XML
 
-import org.apache.spark.SparkConf
-import org.apache.spark.internal.Logging
+import org.apache.spark.{Logging, SparkConf}
 import org.apache.spark.util.Utils
 
 /**
@@ -34,9 +33,9 @@ import org.apache.spark.util.Utils
 private[spark] trait SchedulableBuilder {
   def rootPool: Pool
 
-  def buildPools(): Unit
+  def buildPools()
 
-  def addTaskSetManager(manager: Schedulable, properties: Properties): Unit
+  def addTaskSetManager(manager: Schedulable, properties: Properties)
 }
 
 private[spark] class FIFOSchedulableBuilder(val rootPool: Pool)

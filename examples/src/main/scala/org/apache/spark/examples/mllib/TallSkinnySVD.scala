@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off println
 package org.apache.spark.examples.mllib
 
 import org.apache.spark.{SparkConf, SparkContext}
@@ -59,4 +58,3 @@ object TallSkinnySVD {
     sc.stop()
   }
 }
-// scalastyle:on println

@@ -17,11 +17,12 @@
 
 package org.apache.spark.scheduler
 
-import com.codahale.metrics.{Gauge, MetricRegistry, Timer}
+import com.codahale.metrics.{Gauge,MetricRegistry}
 
+import org.apache.spark.SparkContext
 import org.apache.spark.metrics.source.Source
 
-private[scheduler] class DAGSchedulerSource(val dagScheduler: DAGScheduler)
+private[spark] class DAGSchedulerSource(val dagScheduler: DAGScheduler)
     extends Source {
   override val metricRegistry = new MetricRegistry()
   override val sourceName = "DAGScheduler"
@@ -45,8 +46,4 @@ private[scheduler] class DAGSchedulerSource(val dagScheduler: DAGScheduler)
   metricRegistry.register(MetricRegistry.name("job", "activeJobs"), new Gauge[Int] {
     override def getValue: Int = dagScheduler.activeJobs.size
   })
-
-  /** Timer that tracks the time to process messages in the DAGScheduler's event loop */
-  val messageProcessingTimer: Timer =
-    metricRegistry.timer(MetricRegistry.name("messageProcessingTime"))
 }

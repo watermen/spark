@@ -17,16 +17,13 @@
 
 package org.apache.spark.api.python
 
-import java.io.{DataInputStream, DataOutputStream, InputStream, OutputStreamWriter}
+import java.io.{DataOutputStream, DataInputStream, InputStream, OutputStreamWriter}
 import java.net.{InetAddress, ServerSocket, Socket, SocketException}
-import java.nio.charset.StandardCharsets
-import java.util.Arrays
 
 import scala.collection.mutable
-import scala.collection.JavaConverters._
+import scala.collection.JavaConversions._
 
 import org.apache.spark._
-import org.apache.spark.internal.Logging
 import org.apache.spark.util.{RedirectThread, Utils}
 
 private[spark] class PythonWorkerFactory(pythonExec: String, envVars: Map[String, String])
@@ -111,9 +108,9 @@ private[spark] class PythonWorkerFactory(pythonExec: String, envVars: Map[String
       serverSocket = new ServerSocket(0, 1, InetAddress.getByAddress(Array(127, 0, 0, 1)))
 
       // Create and start the worker
-      val pb = new ProcessBuilder(Arrays.asList(pythonExec, "-m", "pyspark.worker"))
+      val pb = new ProcessBuilder(Seq(pythonExec, "-m", "pyspark.worker"))
       val workerEnv = pb.environment()
-      workerEnv.putAll(envVars.asJava)
+      workerEnv.putAll(envVars)
       workerEnv.put("PYTHONPATH", pythonPath)
       // This is equivalent to setting the -u flag; we use it because ipython doesn't support -u:
       workerEnv.put("PYTHONUNBUFFERED", "YES")
@@ -123,7 +120,7 @@ private[spark] class PythonWorkerFactory(pythonExec: String, envVars: Map[String
       redirectStreamsToStderr(worker.getInputStream, worker.getErrorStream)
 
       // Tell the worker our port
-      val out = new  OutputStreamWriter(worker.getOutputStream, StandardCharsets.UTF_8)
+      val out = new OutputStreamWriter(worker.getOutputStream)
       out.write(serverSocket.getLocalPort + "\n")
       out.flush()
 
@@ -154,9 +151,9 @@ private[spark] class PythonWorkerFactory(pythonExec: String, envVars: Map[String
 
       try {
         // Create and start the daemon
-        val pb = new ProcessBuilder(Arrays.asList(pythonExec, "-m", "pyspark.daemon"))
+        val pb = new ProcessBuilder(Seq(pythonExec, "-m", "pyspark.daemon"))
         val workerEnv = pb.environment()
-        workerEnv.putAll(envVars.asJava)
+        workerEnv.putAll(envVars)
         workerEnv.put("PYTHONPATH", pythonPath)
         // This is equivalent to setting the -u flag; we use it because ipython doesn't support -u:
         workerEnv.put("PYTHONUNBUFFERED", "YES")

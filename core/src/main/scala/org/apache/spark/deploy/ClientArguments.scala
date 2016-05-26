@@ -19,39 +19,38 @@ package org.apache.spark.deploy
 
 import java.net.{URI, URISyntaxException}
 
-import scala.annotation.tailrec
 import scala.collection.mutable.ListBuffer
 
 import org.apache.log4j.Level
 
-import org.apache.spark.util.{IntParam, MemoryParam, Utils}
+import org.apache.spark.util.{IntParam, MemoryParam}
 
 /**
  * Command-line parser for the driver client.
  */
-private[deploy] class ClientArguments(args: Array[String]) {
-  import ClientArguments._
+private[spark] class ClientArguments(args: Array[String]) {
+  val defaultCores = 1
+  val defaultMemory = 512
 
   var cmd: String = "" // 'launch' or 'kill'
   var logLevel = Level.WARN
 
   // launch parameters
-  var masters: Array[String] = null
+  var master: String = ""
   var jarUrl: String = ""
   var mainClass: String = ""
-  var supervise: Boolean = DEFAULT_SUPERVISE
-  var memory: Int = DEFAULT_MEMORY
-  var cores: Int = DEFAULT_CORES
+  var supervise: Boolean = false
+  var memory: Int = defaultMemory
+  var cores: Int = defaultCores
   private var _driverOptions = ListBuffer[String]()
-  def driverOptions: Seq[String] = _driverOptions.toSeq
+  def driverOptions = _driverOptions.toSeq
 
   // kill parameters
   var driverId: String = ""
 
   parse(args.toList)
 
-  @tailrec
-  private def parse(args: List[String]): Unit = args match {
+  def parse(args: List[String]): Unit = args match {
     case ("--cores" | "-c") :: IntParam(value) :: tail =>
       cores = value
       parse(tail)
@@ -75,22 +74,20 @@ private[deploy] class ClientArguments(args: Array[String]) {
       cmd = "launch"
 
       if (!ClientArguments.isValidJarUrl(_jarUrl)) {
-        // scalastyle:off println
         println(s"Jar url '${_jarUrl}' is not in valid format.")
         println(s"Must be a jar file path in URL format " +
           "(e.g. hdfs://host:port/XX.jar, file:///XX.jar)")
-        // scalastyle:on println
         printUsageAndExit(-1)
       }
 
       jarUrl = _jarUrl
-      masters = Utils.parseStandaloneMasterUrls(_master)
+      master = _master
       mainClass = _mainClass
       _driverOptions ++= tail
 
     case "kill" :: _master :: _driverId :: tail =>
       cmd = "kill"
-      masters = Utils.parseStandaloneMasterUrls(_master)
+      master = _master
       driverId = _driverId
 
     case _ =>
@@ -100,7 +97,7 @@ private[deploy] class ClientArguments(args: Array[String]) {
   /**
    * Print usage and exit JVM with the given exit code.
    */
-  private def printUsageAndExit(exitCode: Int) {
+  def printUsageAndExit(exitCode: Int) {
     // TODO: It wouldn't be too hard to allow users to submit their app and dependency jars
     //       separately similar to in the YARN client.
     val usage =
@@ -109,24 +106,17 @@ private[deploy] class ClientArguments(args: Array[String]) {
       |Usage: DriverClient kill <active-master> <driver-id>
       |
       |Options:
-      |   -c CORES, --cores CORES        Number of cores to request (default: $DEFAULT_CORES)
-      |   -m MEMORY, --memory MEMORY     Megabytes of memory to request (default: $DEFAULT_MEMORY)
+      |   -c CORES, --cores CORES        Number of cores to request (default: $defaultCores)
+      |   -m MEMORY, --memory MEMORY     Megabytes of memory to request (default: $defaultMemory)
       |   -s, --supervise                Whether to restart the driver on failure
-      |                                  (default: $DEFAULT_SUPERVISE)
       |   -v, --verbose                  Print more debugging output
      """.stripMargin
-    // scalastyle:off println
     System.err.println(usage)
-    // scalastyle:on println
     System.exit(exitCode)
   }
 }
 
-private[deploy] object ClientArguments {
-  val DEFAULT_CORES = 1
-  val DEFAULT_MEMORY = Utils.DEFAULT_DRIVER_MEM_MB // MB
-  val DEFAULT_SUPERVISE = false
-
+object ClientArguments {
   def isValidJarUrl(s: String): Boolean = {
     try {
       val uri = new URI(s)

@@ -26,10 +26,10 @@ import java.util.Properties
 private[spark] class TaskSet(
     val tasks: Array[Task[_]],
     val stageId: Int,
-    val stageAttemptId: Int,
+    val attempt: Int,
     val priority: Int,
     val properties: Properties) {
-  val id: String = stageId + "." + stageAttemptId
+    val id: String = stageId + "." + attempt
 
   override def toString: String = "TaskSet " + id
 }

@@ -17,10 +17,11 @@
 
 package org.apache.spark.graphx
 
-import org.apache.spark.SparkFunSuite
+import org.scalatest.FunSuite
+
 import org.apache.spark.storage.StorageLevel
 
-class EdgeRDDSuite extends SparkFunSuite with LocalSparkContext {
+class EdgeRDDSuite extends FunSuite with LocalSparkContext {
 
   test("cache, getStorageLevel") {
     // test to see if getStorageLevel returns correct value after caching

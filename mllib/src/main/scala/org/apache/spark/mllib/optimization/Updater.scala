@@ -19,10 +19,10 @@ package org.apache.spark.mllib.optimization
 
 import scala.math._
 
-import breeze.linalg.{axpy => brzAxpy, norm => brzNorm, Vector => BV}
+import breeze.linalg.{norm => brzNorm, axpy => brzAxpy, Vector => BV}
 
 import org.apache.spark.annotation.DeveloperApi
-import org.apache.spark.mllib.linalg.{Vector, Vectors}
+import org.apache.spark.mllib.linalg.{Vectors, Vector}
 
 /**
  * :: DeveloperApi ::
@@ -116,8 +116,7 @@ class L1Updater extends Updater {
     // Apply proximal operator (soft thresholding)
     val shrinkageVal = regParam * thisIterStepSize
     var i = 0
-    val len = brzWeights.length
-    while (i < len) {
+    while (i < brzWeights.length) {
       val wi = brzWeights(i)
       brzWeights(i) = signum(wi) * max(0.0, abs(wi) - shrinkageVal)
       i += 1

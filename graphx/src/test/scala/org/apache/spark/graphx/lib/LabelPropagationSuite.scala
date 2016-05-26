@@ -17,10 +17,11 @@
 
 package org.apache.spark.graphx.lib
 
-import org.apache.spark.SparkFunSuite
+import org.scalatest.FunSuite
+
 import org.apache.spark.graphx._
 
-class LabelPropagationSuite extends SparkFunSuite with LocalSparkContext {
+class LabelPropagationSuite extends FunSuite with LocalSparkContext {
   test("Label Propagation") {
     withSpark { sc =>
       // Construct a graph with two cliques connected by a single edge

@@ -15,18 +15,17 @@
  * limitations under the License.
  */
 
-// scalastyle:off println
 package org.apache.spark.examples
 
 import org.apache.commons.math3.linear._
 
-import org.apache.spark.sql.SparkSession
+import org.apache.spark._
 
 /**
  * Alternating least squares matrix factorization.
  *
  * This is an example implementation for learning how to use Spark. For more conventional use,
- * please refer to org.apache.spark.ml.recommendation.ALS.
+ * please refer to org.apache.spark.mllib.recommendation.ALS
  */
 object SparkALS {
 
@@ -58,7 +57,7 @@ object SparkALS {
   }
 
   def update(i: Int, m: RealVector, us: Array[RealVector], R: RealMatrix) : RealVector = {
-    val U = us.length
+    val U = us.size
     val F = us(0).getDimension
     var XtX: RealMatrix = new Array2DRowRealMatrix(F, F)
     var Xty: RealVector = new ArrayRealVector(F)
@@ -81,7 +80,7 @@ object SparkALS {
   def showWarning() {
     System.err.println(
       """WARN: This is a naive implementation of ALS and is given as an example!
-        |Please use org.apache.spark.ml.recommendation.ALS
+        |Please use the ALS method found in org.apache.spark.mllib.recommendation
         |for more conventional use.
       """.stripMargin)
   }
@@ -108,12 +107,8 @@ object SparkALS {
 
     println(s"Running with M=$M, U=$U, F=$F, iters=$ITERATIONS")
 
-    val spark = SparkSession
-      .builder
-      .appName("SparkALS")
-      .getOrCreate()
-
-    val sc = spark.sparkContext
+    val sparkConf = new SparkConf().setAppName("SparkALS")
+    val sc = new SparkContext(sparkConf)
 
     val R = generateR()
 
@@ -122,7 +117,7 @@ object SparkALS {
     var us = Array.fill(U)(randomVector(F))
 
     // Iteratively update movies then users
-    val Rc = sc.broadcast(R)
+    val Rc  = sc.broadcast(R)
     var msb = sc.broadcast(ms)
     var usb = sc.broadcast(us)
     for (iter <- 1 to ITERATIONS) {
@@ -139,7 +134,7 @@ object SparkALS {
       println()
     }
 
-    spark.stop()
+    sc.stop()
   }
 
   private def randomVector(n: Int): RealVector =
@@ -149,4 +144,3 @@ object SparkALS {
     new Array2DRowRealMatrix(Array.fill(rows, cols)(math.random))
 
 }
-// scalastyle:on println

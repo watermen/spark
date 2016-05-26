@@ -19,28 +19,42 @@ package org.apache.spark.deploy.master.ui
 
 import javax.servlet.http.HttpServletRequest
 
+import scala.concurrent.Await
 import scala.xml.Node
 
+import akka.pattern.ask
+import org.json4s.JValue
+
+import org.apache.spark.deploy.{ExecutorState, JsonProtocol}
 import org.apache.spark.deploy.DeployMessages.{MasterStateResponse, RequestMasterState}
-import org.apache.spark.deploy.ExecutorState
 import org.apache.spark.deploy.master.ExecutorDesc
 import org.apache.spark.ui.{UIUtils, WebUIPage}
 import org.apache.spark.util.Utils
 
-private[ui] class ApplicationPage(parent: MasterWebUI) extends WebUIPage("app") {
+private[spark] class ApplicationPage(parent: MasterWebUI) extends WebUIPage("app") {
 
-  private val master = parent.masterEndpointRef
+  private val master = parent.masterActorRef
+  private val timeout = parent.timeout
+
+  /** Executor details for a particular application */
+  override def renderJson(request: HttpServletRequest): JValue = {
+    val appId = request.getParameter("appId")
+    val stateFuture = (master ? RequestMasterState)(timeout).mapTo[MasterStateResponse]
+    val state = Await.result(stateFuture, timeout)
+    val app = state.activeApps.find(_.id == appId).getOrElse({
+      state.completedApps.find(_.id == appId).getOrElse(null)
+    })
+    JsonProtocol.writeApplicationInfo(app)
+  }
 
   /** Executor details for a particular application */
   def render(request: HttpServletRequest): Seq[Node] = {
     val appId = request.getParameter("appId")
-    val state = master.askWithRetry[MasterStateResponse](RequestMasterState)
-    val app = state.activeApps.find(_.id == appId)
-      .getOrElse(state.completedApps.find(_.id == appId).orNull)
-    if (app == null) {
-      val msg = <div class="row-fluid">No running application with ID {appId}</div>
-      return UIUtils.basicSparkPage(msg, "Not Found")
-    }
+    val stateFuture = (master ? RequestMasterState)(timeout).mapTo[MasterStateResponse]
+    val state = Await.result(stateFuture, timeout)
+    val app = state.activeApps.find(_.id == appId).getOrElse({
+      state.completedApps.find(_.id == appId).getOrElse(null)
+    })
 
     val executorHeaders = Seq("ExecutorID", "Worker", "Cores", "Memory", "State", "Logs")
     val allExecutors = (app.executors.values ++ app.removedExecutors).toSet.toSeq
@@ -71,15 +85,11 @@ private[ui] class ApplicationPage(parent: MasterWebUI) extends WebUIPage("app") 
             </li>
             <li>
               <strong>Executor Memory:</strong>
-              {Utils.megabytesToString(app.desc.memoryPerExecutorMB)}
+              {Utils.megabytesToString(app.desc.memoryPerSlave)}
             </li>
             <li><strong>Submit Date:</strong> {app.submitDate}</li>
             <li><strong>State:</strong> {app.state}</li>
-            {
-              if (!app.isFinished) {
-                <li><strong><a href={app.desc.appUiUrl}>Application Detail UI</a></strong></li>
-              }
-            }
+            <li><strong><a href={app.desc.appUiUrl}>Application Detail UI</a></strong></li>
           </ul>
         </div>
       </div>

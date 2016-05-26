@@ -17,7 +17,7 @@
 
 package org.apache.spark.util.collection
 
-import java.util.Comparator
+import java.util.{Arrays, Comparator}
 
 import com.google.common.hash.Hashing
 
@@ -32,18 +32,12 @@ import org.apache.spark.annotation.DeveloperApi
  * size, which is guaranteed to explore all spaces for each key (see
  * http://en.wikipedia.org/wiki/Quadratic_probing).
  *
- * The map can support up to `375809638 (0.7 * 2 ^ 29)` elements.
- *
  * TODO: Cache the hash values of each key? java.util.HashMap does that.
  */
 @DeveloperApi
 class AppendOnlyMap[K, V](initialCapacity: Int = 64)
   extends Iterable[(K, V)] with Serializable {
-
-  import AppendOnlyMap._
-
-  require(initialCapacity <= MAXIMUM_CAPACITY,
-    s"Can't make capacity bigger than ${MAXIMUM_CAPACITY} elements")
+  require(initialCapacity <= (1 << 29), "Can't make capacity bigger than 2^29 elements")
   require(initialCapacity >= 1, "Invalid initial capacity")
 
   private val LOAD_FACTOR = 0.7
@@ -212,9 +206,12 @@ class AppendOnlyMap[K, V](initialCapacity: Int = 64)
 
   /** Double the table's size and re-hash everything */
   protected def growTable() {
-    // capacity < MAXIMUM_CAPACITY (2 ^ 29) so capacity * 2 won't overflow
     val newCapacity = capacity * 2
-    require(newCapacity <= MAXIMUM_CAPACITY, s"Can't contain more than ${growThreshold} elements")
+    if (newCapacity >= (1 << 30)) {
+      // We can't make the table this big because we want an array of 2x
+      // that size for our data, but array sizes are at most Int.MaxValue
+      throw new Exception("Can't make capacity bigger than 2^29 elements")
+    }
     val newData = new Array[AnyRef](2 * newCapacity)
     val newMask = newCapacity - 1
     // Insert all our old values into the new array. Note that because our old keys are
@@ -294,8 +291,4 @@ class AppendOnlyMap[K, V](initialCapacity: Int = 64)
    * Return whether the next insert will cause the map to grow
    */
   def atGrowThreshold: Boolean = curSize == growThreshold
-}
-
-private object AppendOnlyMap {
-  val MAXIMUM_CAPACITY = (1 << 29)
 }

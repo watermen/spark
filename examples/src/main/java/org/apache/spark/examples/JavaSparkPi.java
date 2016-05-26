@@ -17,32 +17,28 @@
 
 package org.apache.spark.examples;
 
+import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
-import org.apache.spark.sql.SparkSession;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/**
+/** 
  * Computes an approximation to pi
  * Usage: JavaSparkPi [slices]
  */
 public final class JavaSparkPi {
 
   public static void main(String[] args) throws Exception {
-    SparkSession spark = SparkSession
-      .builder()
-      .appName("JavaSparkPi")
-      .getOrCreate();
-
-    JavaSparkContext jsc = new JavaSparkContext(spark.sparkContext());
+    SparkConf sparkConf = new SparkConf().setAppName("JavaSparkPi");
+    JavaSparkContext jsc = new JavaSparkContext(sparkConf);
 
     int slices = (args.length == 1) ? Integer.parseInt(args[0]) : 2;
     int n = 100000 * slices;
-    List<Integer> l = new ArrayList<>(n);
+    List<Integer> l = new ArrayList<Integer>(n);
     for (int i = 0; i < n; i++) {
       l.add(i);
     }
@@ -65,6 +61,6 @@ public final class JavaSparkPi {
 
     System.out.println("Pi is roughly " + 4.0 * count / n);
 
-    spark.stop();
+    jsc.stop();
   }
 }

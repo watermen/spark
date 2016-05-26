@@ -19,20 +19,16 @@ package org.apache.spark.streaming.scheduler
 
 import java.nio.ByteBuffer
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.language.implicitConversions
-import scala.util.control.NonFatal
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.SparkConf
-import org.apache.spark.internal.Logging
-import org.apache.spark.network.util.JavaUtils
+import org.apache.spark.{SparkException, Logging, SparkConf}
 import org.apache.spark.streaming.Time
-import org.apache.spark.streaming.util.{WriteAheadLog, WriteAheadLogUtils}
-import org.apache.spark.util.{Clock, Utils}
+import org.apache.spark.streaming.util.{Clock, WriteAheadLogManager}
+import org.apache.spark.util.Utils
 
 /** Trait representing any event in the ReceivedBlockTracker that updates its state. */
 private[streaming] sealed trait ReceivedBlockTrackerLogEvent
@@ -44,11 +40,12 @@ private[streaming] case class BatchAllocationEvent(time: Time, allocatedBlocks: 
 private[streaming] case class BatchCleanupEvent(times: Seq[Time])
   extends ReceivedBlockTrackerLogEvent
 
+
 /** Class representing the blocks of all the streams allocated to a batch */
 private[streaming]
 case class AllocatedBlocks(streamIdToAllocatedBlocks: Map[Int, Seq[ReceivedBlockInfo]]) {
   def getBlocksOfStream(streamId: Int): Seq[ReceivedBlockInfo] = {
-    streamIdToAllocatedBlocks.getOrElse(streamId, Seq.empty)
+    streamIdToAllocatedBlocks.get(streamId).getOrElse(Seq.empty)
   }
 }
 
@@ -66,7 +63,6 @@ private[streaming] class ReceivedBlockTracker(
     hadoopConf: Configuration,
     streamIds: Seq[Int],
     clock: Clock,
-    recoverFromWriteAheadLog: Boolean,
     checkpointDirOption: Option[String])
   extends Logging {
 
@@ -74,32 +70,23 @@ private[streaming] class ReceivedBlockTracker(
 
   private val streamIdToUnallocatedBlockQueues = new mutable.HashMap[Int, ReceivedBlockQueue]
   private val timeToAllocatedBlocks = new mutable.HashMap[Time, AllocatedBlocks]
-  private val writeAheadLogOption = createWriteAheadLog()
+  private val logManagerOption = createLogManager()
 
   private var lastAllocatedBatchTime: Time = null
 
   // Recover block information from write ahead logs
-  if (recoverFromWriteAheadLog) {
-    recoverPastEvents()
-  }
+  recoverFromWriteAheadLogs()
 
   /** Add received block. This event will get written to the write ahead log (if enabled). */
-  def addBlock(receivedBlockInfo: ReceivedBlockInfo): Boolean = {
+  def addBlock(receivedBlockInfo: ReceivedBlockInfo): Boolean = synchronized {
     try {
-      val writeResult = writeToLog(BlockAdditionEvent(receivedBlockInfo))
-      if (writeResult) {
-        synchronized {
-          getReceivedBlockQueue(receivedBlockInfo.streamId) += receivedBlockInfo
-        }
-        logDebug(s"Stream ${receivedBlockInfo.streamId} received " +
-          s"block ${receivedBlockInfo.blockStoreResult.blockId}")
-      } else {
-        logDebug(s"Failed to acknowledge stream ${receivedBlockInfo.streamId} receiving " +
-          s"block ${receivedBlockInfo.blockStoreResult.blockId} in the Write Ahead Log.")
-      }
-      writeResult
+      writeToLog(BlockAdditionEvent(receivedBlockInfo))
+      getReceivedBlockQueue(receivedBlockInfo.streamId) += receivedBlockInfo
+      logDebug(s"Stream ${receivedBlockInfo.streamId} received " +
+        s"block ${receivedBlockInfo.blockStoreResult.blockId}")
+      true
     } catch {
-      case NonFatal(e) =>
+      case e: Exception =>
         logError(s"Error adding block $receivedBlockInfo", e)
         false
     }
@@ -115,12 +102,10 @@ private[streaming] class ReceivedBlockTracker(
           (streamId, getReceivedBlockQueue(streamId).dequeueAll(x => true))
       }.toMap
       val allocatedBlocks = AllocatedBlocks(streamIdToBlocks)
-      if (writeToLog(BatchAllocationEvent(batchTime, allocatedBlocks))) {
-        timeToAllocatedBlocks.put(batchTime, allocatedBlocks)
-        lastAllocatedBatchTime = batchTime
-      } else {
-        logInfo(s"Possibly processed batch $batchTime needs to be processed again in WAL recovery")
-      }
+      writeToLog(BatchAllocationEvent(batchTime, allocatedBlocks))
+      timeToAllocatedBlocks(batchTime) = allocatedBlocks
+      lastAllocatedBatchTime = batchTime
+      allocatedBlocks
     } else {
       // This situation occurs when:
       // 1. WAL is ended with BatchAllocationEvent, but without BatchCleanupEvent,
@@ -129,7 +114,7 @@ private[streaming] class ReceivedBlockTracker(
       // 2. Slow checkpointing makes recovered batch time older than WAL recovered
       // lastAllocatedBatchTime.
       // This situation will only occurs in recovery time.
-      logInfo(s"Possibly processed batch $batchTime needs to be processed again in WAL recovery")
+      logInfo(s"Possibly processed batch $batchTime need to be processed again in WAL recovery")
     }
   }
 
@@ -165,31 +150,27 @@ private[streaming] class ReceivedBlockTracker(
    * returns only after the files are cleaned up.
    */
   def cleanupOldBatches(cleanupThreshTime: Time, waitForCompletion: Boolean): Unit = synchronized {
-    require(cleanupThreshTime.milliseconds < clock.getTimeMillis())
+    assert(cleanupThreshTime.milliseconds < clock.currentTime())
     val timesToCleanup = timeToAllocatedBlocks.keys.filter { _ < cleanupThreshTime }.toSeq
-    logInfo(s"Deleting batches: ${timesToCleanup.mkString(" ")}")
-    if (writeToLog(BatchCleanupEvent(timesToCleanup))) {
-      timeToAllocatedBlocks --= timesToCleanup
-      writeAheadLogOption.foreach(_.clean(cleanupThreshTime.milliseconds, waitForCompletion))
-    } else {
-      logWarning("Failed to acknowledge batch clean up in the Write Ahead Log.")
-    }
+    logInfo("Deleting batches " + timesToCleanup)
+    writeToLog(BatchCleanupEvent(timesToCleanup))
+    timeToAllocatedBlocks --= timesToCleanup
+    logManagerOption.foreach(_.cleanupOldLogs(cleanupThreshTime.milliseconds, waitForCompletion))
   }
 
   /** Stop the block tracker. */
   def stop() {
-    writeAheadLogOption.foreach { _.close() }
+    logManagerOption.foreach { _.stop() }
   }
 
   /**
    * Recover all the tracker actions from the write ahead logs to recover the state (unallocated
    * and allocated block info) prior to failure.
    */
-  private def recoverPastEvents(): Unit = synchronized {
+  private def recoverFromWriteAheadLogs(): Unit = synchronized {
     // Insert the recovered block information
     def insertAddedBlock(receivedBlockInfo: ReceivedBlockInfo) {
       logTrace(s"Recovery: Inserting added block $receivedBlockInfo")
-      receivedBlockInfo.setBlockIdInvalid()
       getReceivedBlockQueue(receivedBlockInfo.streamId) += receivedBlockInfo
     }
 
@@ -199,8 +180,8 @@ private[streaming] class ReceivedBlockTracker(
       logTrace(s"Recovery: Inserting allocated batch for time $batchTime to " +
         s"${allocatedBlocks.streamIdToAllocatedBlocks}")
       streamIdToUnallocatedBlockQueues.values.foreach { _.clear() }
-      timeToAllocatedBlocks.put(batchTime, allocatedBlocks)
       lastAllocatedBatchTime = batchTime
+      timeToAllocatedBlocks.put(batchTime, allocatedBlocks)
     }
 
     // Cleanup the batch allocations
@@ -209,12 +190,11 @@ private[streaming] class ReceivedBlockTracker(
       timeToAllocatedBlocks --= batchTimes
     }
 
-    writeAheadLogOption.foreach { writeAheadLog =>
+    logManagerOption.foreach { logManager =>
       logInfo(s"Recovering from write ahead logs in ${checkpointDirOption.get}")
-      writeAheadLog.readAll().asScala.foreach { byteBuffer =>
-        logInfo("Recovering record " + byteBuffer)
-        Utils.deserialize[ReceivedBlockTrackerLogEvent](
-          JavaUtils.bufferToArray(byteBuffer), Thread.currentThread().getContextClassLoader) match {
+      logManager.readFromLog().foreach { byteBuffer =>
+        logTrace("Recovering record " + byteBuffer)
+        Utils.deserialize[ReceivedBlockTrackerLogEvent](byteBuffer.array) match {
           case BlockAdditionEvent(receivedBlockInfo) =>
             insertAddedBlock(receivedBlockInfo)
           case BatchAllocationEvent(time, allocatedBlocks) =>
@@ -227,20 +207,12 @@ private[streaming] class ReceivedBlockTracker(
   }
 
   /** Write an update to the tracker to the write ahead log */
-  private def writeToLog(record: ReceivedBlockTrackerLogEvent): Boolean = {
-    if (isWriteAheadLogEnabled) {
-      logTrace(s"Writing record: $record")
-      try {
-        writeAheadLogOption.get.write(ByteBuffer.wrap(Utils.serialize(record)),
-          clock.getTimeMillis())
-        true
-      } catch {
-        case NonFatal(e) =>
-          logWarning(s"Exception thrown while writing record: $record to the WriteAheadLog.", e)
-          false
+  private def writeToLog(record: ReceivedBlockTrackerLogEvent) {
+    if (isLogManagerEnabled) {
+      logDebug(s"Writing to log $record")
+      logManagerOption.foreach { logManager =>
+        logManager.writeToLog(ByteBuffer.wrap(Utils.serialize(record)))
       }
-    } else {
-      true
     }
   }
 
@@ -250,15 +222,28 @@ private[streaming] class ReceivedBlockTracker(
   }
 
   /** Optionally create the write ahead log manager only if the feature is enabled */
-  private def createWriteAheadLog(): Option[WriteAheadLog] = {
-    checkpointDirOption.map { checkpointDir =>
+  private def createLogManager(): Option[WriteAheadLogManager] = {
+    if (conf.getBoolean("spark.streaming.receiver.writeAheadLog.enable", false)) {
+      if (checkpointDirOption.isEmpty) {
+        throw new SparkException(
+          "Cannot enable receiver write-ahead log without checkpoint directory set. " +
+            "Please use streamingContext.checkpoint() to set the checkpoint directory. " +
+            "See documentation for more details.")
+      }
       val logDir = ReceivedBlockTracker.checkpointDirToLogDir(checkpointDirOption.get)
-      WriteAheadLogUtils.createLogForDriver(conf, logDir, hadoopConf)
+      val rollingIntervalSecs = conf.getInt(
+        "spark.streaming.receivedBlockTracker.writeAheadLog.rotationIntervalSecs", 60)
+      val logManager = new WriteAheadLogManager(logDir, hadoopConf,
+        rollingIntervalSecs = rollingIntervalSecs, clock = clock,
+        callerName = "ReceivedBlockHandlerMaster")
+      Some(logManager)
+    } else {
+      None
     }
   }
 
-  /** Check if the write ahead log is enabled. This is only used for testing purposes. */
-  private[streaming] def isWriteAheadLogEnabled: Boolean = writeAheadLogOption.nonEmpty
+  /** Check if the log manager is enabled. This is only used for testing purposes. */
+  private[streaming] def isLogManagerEnabled: Boolean = logManagerOption.nonEmpty
 }
 
 private[streaming] object ReceivedBlockTracker {

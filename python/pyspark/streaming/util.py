@@ -37,16 +37,8 @@ class TransformFunction(object):
         self.ctx = ctx
         self.func = func
         self.deserializers = deserializers
-        self.rdd_wrap_func = lambda jrdd, ctx, ser: RDD(jrdd, ctx, ser)
-        self.failure = None
-
-    def rdd_wrapper(self, func):
-        self.rdd_wrap_func = func
-        return self
 
     def call(self, milliseconds, jrdds):
-        # Clear the failure
-        self.failure = None
         try:
             if self.ctx is None:
                 self.ctx = SparkContext._active_spark_context
@@ -59,17 +51,14 @@ class TransformFunction(object):
             if len(sers) < len(jrdds):
                 sers += (sers[0],) * (len(jrdds) - len(sers))
 
-            rdds = [self.rdd_wrap_func(jrdd, self.ctx, ser) if jrdd else None
+            rdds = [RDD(jrdd, self.ctx, ser) if jrdd else None
                     for jrdd, ser in zip(jrdds, sers)]
             t = datetime.fromtimestamp(milliseconds / 1000.0)
             r = self.func(t, *rdds)
             if r:
                 return r._jrdd
-        except:
-            self.failure = traceback.format_exc()
-
-    def getLastFailure(self):
-        return self.failure
+        except Exception:
+            traceback.print_exc()
 
     def __repr__(self):
         return "TransformFunction(%s)" % self.func
@@ -94,29 +83,20 @@ class TransformFunctionSerializer(object):
         self.serializer = serializer
         self.gateway = gateway or self.ctx._gateway
         self.gateway.jvm.PythonDStream.registerSerializer(self)
-        self.failure = None
 
     def dumps(self, id):
-        # Clear the failure
-        self.failure = None
         try:
             func = self.gateway.gateway_property.pool[id]
-            return bytearray(self.serializer.dumps((
-                func.func, func.rdd_wrap_func, func.deserializers)))
-        except:
-            self.failure = traceback.format_exc()
+            return bytearray(self.serializer.dumps((func.func, func.deserializers)))
+        except Exception:
+            traceback.print_exc()
 
-    def loads(self, data):
-        # Clear the failure
-        self.failure = None
+    def loads(self, bytes):
         try:
-            f, wrap_func, deserializers = self.serializer.loads(bytes(data))
-            return TransformFunction(self.ctx, f, *deserializers).rdd_wrapper(wrap_func)
-        except:
-            self.failure = traceback.format_exc()
-
-    def getLastFailure(self):
-        return self.failure
+            f, deserializers = self.serializer.loads(str(bytes))
+            return TransformFunction(self.ctx, f, *deserializers)
+        except Exception:
+            traceback.print_exc()
 
     def __repr__(self):
         return "TransformFunctionSerializer(%s)" % self.serializer
@@ -136,7 +116,7 @@ def rddToFileName(prefix, suffix, timestamp):
     """
     if isinstance(timestamp, datetime):
         seconds = time.mktime(timestamp.timetuple())
-        timestamp = int(seconds * 1000) + timestamp.microsecond // 1000
+        timestamp = long(seconds * 1000) + timestamp.microsecond / 1000
     if suffix is None:
         return prefix + "-" + str(timestamp)
     else:
@@ -145,6 +125,4 @@ def rddToFileName(prefix, suffix, timestamp):
 
 if __name__ == "__main__":
     import doctest
-    (failure_count, test_count) = doctest.testmod()
-    if failure_count:
-        exit(-1)
+    doctest.testmod()

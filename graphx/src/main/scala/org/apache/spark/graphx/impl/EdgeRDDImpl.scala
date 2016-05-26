@@ -19,10 +19,11 @@ package org.apache.spark.graphx.impl
 
 import scala.reflect.{classTag, ClassTag}
 
-import org.apache.spark.{HashPartitioner, OneToOneDependency}
-import org.apache.spark.graphx._
+import org.apache.spark.{OneToOneDependency, HashPartitioner, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
+
+import org.apache.spark.graphx._
 
 class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] private[graphx] (
     @transient override val partitionsRDD: RDD[(PartitionID, EdgePartition[ED, VD])],
@@ -45,7 +46,7 @@ class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] private[graphx] (
    * partitioner that allows co-partitioning with `partitionsRDD`.
    */
   override val partitioner =
-    partitionsRDD.partitioner.orElse(Some(new HashPartitioner(partitions.length)))
+    partitionsRDD.partitioner.orElse(Some(new HashPartitioner(partitions.size)))
 
   override def collect(): Array[Edge[ED]] = this.map(_.copy()).collect()
 
@@ -69,9 +70,9 @@ class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] private[graphx] (
     this
   }
 
-  override def getStorageLevel: StorageLevel = partitionsRDD.getStorageLevel
+  override def getStorageLevel = partitionsRDD.getStorageLevel
 
-  override def checkpoint(): Unit = {
+  override def checkpoint() = {
     partitionsRDD.checkpoint()
   }
 

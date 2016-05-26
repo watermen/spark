@@ -17,14 +17,15 @@
 
 package org.apache.spark.mllib.feature
 
-import org.apache.spark.SparkFunSuite
+import org.scalatest.FunSuite
+
 import org.apache.spark.mllib.linalg.{DenseVector, SparseVector, Vector, Vectors}
-import org.apache.spark.mllib.stat.{MultivariateOnlineSummarizer, MultivariateStatisticalSummary}
 import org.apache.spark.mllib.util.MLlibTestSparkContext
 import org.apache.spark.mllib.util.TestingUtils._
+import org.apache.spark.mllib.stat.{MultivariateStatisticalSummary, MultivariateOnlineSummarizer}
 import org.apache.spark.rdd.RDD
 
-class StandardScalerSuite extends SparkFunSuite with MLlibTestSparkContext {
+class StandardScalerSuite extends FunSuite with MLlibTestSparkContext {
 
   // When the input data is all constant, the variance is zero. The standardization against
   // zero variance is not well-defined, but we decide to just set it into zero here.
@@ -359,7 +360,7 @@ class StandardScalerSuite extends SparkFunSuite with MLlibTestSparkContext {
     }
     withClue("model needs std and mean vectors to be equal size when both are provided") {
       intercept[IllegalArgumentException] {
-        val model = new StandardScalerModel(Vectors.dense(0.0), Vectors.dense(0.0, 1.0))
+        val model = new StandardScalerModel(Vectors.dense(0.0), Vectors.dense(0.0,1.0))
       }
     }
   }

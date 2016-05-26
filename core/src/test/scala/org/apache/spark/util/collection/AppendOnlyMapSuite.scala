@@ -21,9 +21,9 @@ import java.util.Comparator
 
 import scala.collection.mutable.HashSet
 
-import org.apache.spark.SparkFunSuite
+import org.scalatest.FunSuite
 
-class AppendOnlyMapSuite extends SparkFunSuite {
+class AppendOnlyMapSuite extends FunSuite {
   test("initialization") {
     val goodMap1 = new AppendOnlyMap[Int, Int](1)
     assert(goodMap1.size === 0)

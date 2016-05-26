@@ -27,7 +27,7 @@ import java.nio.channels.Channels
  */
 private[spark]
 class SerializableBuffer(@transient var buffer: ByteBuffer) extends Serializable {
-  def value: ByteBuffer = buffer
+  def value = buffer
 
   private def readObject(in: ObjectInputStream): Unit = Utils.tryOrIOException {
     val length = in.readInt()

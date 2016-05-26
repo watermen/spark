@@ -21,25 +21,10 @@ import java.io.File
 
 object SSLSampleConfigs {
   val keyStorePath = new File(this.getClass.getResource("/keystore").toURI).getAbsolutePath
-  val untrustedKeyStorePath = new File(
-    this.getClass.getResource("/untrusted-keystore").toURI).getAbsolutePath
+  val untrustedKeyStorePath = new File(this.getClass.getResource("/untrusted-keystore").toURI).getAbsolutePath
   val trustStorePath = new File(this.getClass.getResource("/truststore").toURI).getAbsolutePath
 
-  val enabledAlgorithms =
-    // A reasonable set of TLSv1.2 Oracle security provider suites
-    "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384, " +
-    "TLS_RSA_WITH_AES_256_CBC_SHA256, " +
-    "TLS_DHE_RSA_WITH_AES_256_CBC_SHA256, " +
-    "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256, " +
-    "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256, " +
-    // and their equivalent names in the IBM Security provider
-    "SSL_ECDHE_RSA_WITH_AES_256_CBC_SHA384, " +
-    "SSL_RSA_WITH_AES_256_CBC_SHA256, " +
-    "SSL_DHE_RSA_WITH_AES_256_CBC_SHA256, " +
-    "SSL_ECDHE_RSA_WITH_AES_128_CBC_SHA256, " +
-    "SSL_DHE_RSA_WITH_AES_128_CBC_SHA256"
-
-  def sparkSSLConfig(): SparkConf = {
+  def sparkSSLConfig() = {
     val conf = new SparkConf(loadDefaults = false)
     conf.set("spark.ssl.enabled", "true")
     conf.set("spark.ssl.keyStore", keyStorePath)
@@ -47,12 +32,13 @@ object SSLSampleConfigs {
     conf.set("spark.ssl.keyPassword", "password")
     conf.set("spark.ssl.trustStore", trustStorePath)
     conf.set("spark.ssl.trustStorePassword", "password")
-    conf.set("spark.ssl.enabledAlgorithms", enabledAlgorithms)
-    conf.set("spark.ssl.protocol", "TLSv1.2")
+    conf.set("spark.ssl.enabledAlgorithms",
+      "TLS_RSA_WITH_AES_128_CBC_SHA, SSL_RSA_WITH_DES_CBC_SHA")
+    conf.set("spark.ssl.protocol", "TLSv1")
     conf
   }
 
-  def sparkSSLConfigUntrusted(): SparkConf = {
+  def sparkSSLConfigUntrusted() = {
     val conf = new SparkConf(loadDefaults = false)
     conf.set("spark.ssl.enabled", "true")
     conf.set("spark.ssl.keyStore", untrustedKeyStorePath)
@@ -60,8 +46,9 @@ object SSLSampleConfigs {
     conf.set("spark.ssl.keyPassword", "password")
     conf.set("spark.ssl.trustStore", trustStorePath)
     conf.set("spark.ssl.trustStorePassword", "password")
-    conf.set("spark.ssl.enabledAlgorithms", enabledAlgorithms)
-    conf.set("spark.ssl.protocol", "TLSv1.2")
+    conf.set("spark.ssl.enabledAlgorithms",
+      "TLS_RSA_WITH_AES_128_CBC_SHA, SSL_RSA_WITH_DES_CBC_SHA")
+    conf.set("spark.ssl.protocol", "TLSv1")
     conf
   }
 

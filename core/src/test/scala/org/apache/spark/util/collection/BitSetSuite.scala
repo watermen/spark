@@ -17,9 +17,9 @@
 
 package org.apache.spark.util.collection
 
-import org.apache.spark.SparkFunSuite
+import org.scalatest.FunSuite
 
-class BitSetSuite extends SparkFunSuite {
+class BitSetSuite extends FunSuite {
 
   test("basic set and get") {
     val setBits = Seq(0, 9, 1, 10, 90, 96)
@@ -94,7 +94,7 @@ class BitSetSuite extends SparkFunSuite {
 
   test( "xor len(bitsetX) > len(bitsetY)" ) {
     val setBitsX = Seq( 0, 1, 3, 37, 38, 41, 85)
-    val setBitsY = Seq( 0, 2, 3, 37, 41)
+    val setBitsY   = Seq( 0, 2, 3, 37, 41 )
     val bitsetX = new BitSet(100)
     setBitsX.foreach( i => bitsetX.set(i))
     val bitsetY = new BitSet(60)

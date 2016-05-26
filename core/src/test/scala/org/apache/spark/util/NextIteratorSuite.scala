@@ -21,11 +21,10 @@ import java.util.NoSuchElementException
 
 import scala.collection.mutable.Buffer
 
+import org.scalatest.FunSuite
 import org.scalatest.Matchers
 
-import org.apache.spark.SparkFunSuite
-
-class NextIteratorSuite extends SparkFunSuite with Matchers {
+class NextIteratorSuite extends FunSuite with Matchers {
   test("one iteration") {
     val i = new StubIterator(Buffer(1))
     i.hasNext should be (true)
@@ -72,7 +71,7 @@ class NextIteratorSuite extends SparkFunSuite with Matchers {
   class StubIterator(ints: Buffer[Int])  extends NextIterator[Int] {
     var closeCalled = 0
 
-    override def getNext(): Int = {
+    override def getNext() = {
       if (ints.size == 0) {
         finished = true
         0

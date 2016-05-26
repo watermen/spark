@@ -17,57 +17,53 @@
 
 package org.apache.spark.streaming.receiver
 
-import com.google.common.util.concurrent.{RateLimiter => GuavaRateLimiter}
+import org.apache.spark.{Logging, SparkConf}
+import java.util.concurrent.TimeUnit._
 
-import org.apache.spark.SparkConf
-import org.apache.spark.internal.Logging
-
-/**
- * Provides waitToPush() method to limit the rate at which receivers consume data.
- *
- * waitToPush method will block the thread if too many messages have been pushed too quickly,
- * and only return when a new message has been pushed. It assumes that only one message is
- * pushed at a time.
- *
- * The spark configuration spark.streaming.receiver.maxRate gives the maximum number of messages
- * per second that each receiver will accept.
- *
- * @param conf spark configuration
- */
+/** Provides waitToPush() method to limit the rate at which receivers consume data.
+  *
+  * waitToPush method will block the thread if too many messages have been pushed too quickly,
+  * and only return when a new message has been pushed. It assumes that only one message is
+  * pushed at a time.
+  *
+  * The spark configuration spark.streaming.receiver.maxRate gives the maximum number of messages
+  * per second that each receiver will accept.
+  *
+  * @param conf spark configuration
+  */
 private[receiver] abstract class RateLimiter(conf: SparkConf) extends Logging {
 
-  // treated as an upper limit
-  private val maxRateLimit = conf.getLong("spark.streaming.receiver.maxRate", Long.MaxValue)
-  private lazy val rateLimiter = GuavaRateLimiter.create(getInitialRateLimit().toDouble)
+  private var lastSyncTime = System.nanoTime
+  private var messagesWrittenSinceSync = 0L
+  private val desiredRate = conf.getInt("spark.streaming.receiver.maxRate", 0)
+  private val SYNC_INTERVAL = NANOSECONDS.convert(10, SECONDS)
 
   def waitToPush() {
-    rateLimiter.acquire()
-  }
-
-  /**
-   * Return the current rate limit. If no limit has been set so far, it returns {{{Long.MaxValue}}}.
-   */
-  def getCurrentLimit: Long = rateLimiter.getRate.toLong
-
-  /**
-   * Set the rate limit to `newRate`. The new rate will not exceed the maximum rate configured by
-   * {{{spark.streaming.receiver.maxRate}}}, even if `newRate` is higher than that.
-   *
-   * @param newRate A new rate in records per second. It has no effect if it's 0 or negative.
-   */
-  private[receiver] def updateRate(newRate: Long): Unit =
-    if (newRate > 0) {
-      if (maxRateLimit > 0) {
-        rateLimiter.setRate(newRate.min(maxRateLimit))
-      } else {
-        rateLimiter.setRate(newRate)
-      }
+    if( desiredRate <= 0 ) {
+      return
     }
-
-  /**
-   * Get the initial rateLimit to initial rateLimiter
-   */
-  private def getInitialRateLimit(): Long = {
-    math.min(conf.getLong("spark.streaming.backpressure.initialRate", maxRateLimit), maxRateLimit)
+    val now = System.nanoTime
+    val elapsedNanosecs = math.max(now - lastSyncTime, 1)
+    val rate = messagesWrittenSinceSync.toDouble * 1000000000 / elapsedNanosecs
+    if (rate < desiredRate) {
+      // It's okay to write; just update some variables and return
+      messagesWrittenSinceSync += 1
+      if (now > lastSyncTime + SYNC_INTERVAL) {
+        // Sync interval has passed; let's resync
+        lastSyncTime = now
+        messagesWrittenSinceSync = 1
+      }
+    } else {
+      // Calculate how much time we should sleep to bring ourselves to the desired rate.
+      val targetTimeInMillis = messagesWrittenSinceSync * 1000 / desiredRate
+      val elapsedTimeInMillis = elapsedNanosecs / 1000000
+      val sleepTimeInMillis = targetTimeInMillis - elapsedTimeInMillis
+      if (sleepTimeInMillis > 0) {
+        logTrace("Natural rate is " + rate + " per second but desired rate is " +
+          desiredRate + ", sleeping for " + sleepTimeInMillis + " ms to compensate.")
+        Thread.sleep(sleepTimeInMillis)
+      }
+      waitToPush()
+    }
   }
 }

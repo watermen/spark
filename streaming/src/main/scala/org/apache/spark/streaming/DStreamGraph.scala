@@ -17,13 +17,11 @@
 
 package org.apache.spark.streaming
 
-import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
-
 import scala.collection.mutable.ArrayBuffer
-
-import org.apache.spark.internal.Logging
-import org.apache.spark.streaming.dstream.{DStream, InputDStream, ReceiverInputDStream}
+import java.io.{ObjectInputStream, IOException, ObjectOutputStream}
+import org.apache.spark.Logging
 import org.apache.spark.streaming.scheduler.Job
+import org.apache.spark.streaming.dstream.{DStream, ReceiverInputDStream, InputDStream}
 import org.apache.spark.util.Utils
 
 final private[streaming] class DStreamGraph extends Serializable with Logging {
@@ -40,12 +38,14 @@ final private[streaming] class DStreamGraph extends Serializable with Logging {
 
   def start(time: Time) {
     this.synchronized {
-      require(zeroTime == null, "DStream graph computation already started")
+      if (zeroTime != null) {
+        throw new Exception("DStream graph computation already started")
+      }
       zeroTime = time
       startTime = time
       outputStreams.foreach(_.initialize(zeroTime))
       outputStreams.foreach(_.remember(rememberDuration))
-      outputStreams.foreach(_.validateAtStart)
+      outputStreams.foreach(_.validate)
       inputStreams.par.foreach(_.start())
     }
   }
@@ -68,16 +68,20 @@ final private[streaming] class DStreamGraph extends Serializable with Logging {
 
   def setBatchDuration(duration: Duration) {
     this.synchronized {
-      require(batchDuration == null,
-        s"Batch duration already set as $batchDuration. Cannot set it again.")
+      if (batchDuration != null) {
+        throw new Exception("Batch duration already set as " + batchDuration +
+          ". cannot set it again.")
+      }
       batchDuration = duration
     }
   }
 
   def remember(duration: Duration) {
     this.synchronized {
-      require(rememberDuration == null,
-        s"Remember duration already set as $rememberDuration. Cannot set it again.")
+      if (rememberDuration != null) {
+        throw new Exception("Remember duration already set as " + batchDuration +
+          ". cannot set it again.")
+      }
       rememberDuration = duration
     }
   }
@@ -96,28 +100,20 @@ final private[streaming] class DStreamGraph extends Serializable with Logging {
     }
   }
 
-  def getInputStreams(): Array[InputDStream[_]] = this.synchronized { inputStreams.toArray }
+  def getInputStreams() = this.synchronized { inputStreams.toArray }
 
-  def getOutputStreams(): Array[DStream[_]] = this.synchronized { outputStreams.toArray }
+  def getOutputStreams() = this.synchronized { outputStreams.toArray }
 
-  def getReceiverInputStreams(): Array[ReceiverInputDStream[_]] = this.synchronized {
+  def getReceiverInputStreams() = this.synchronized {
     inputStreams.filter(_.isInstanceOf[ReceiverInputDStream[_]])
       .map(_.asInstanceOf[ReceiverInputDStream[_]])
       .toArray
   }
 
-  def getInputStreamName(streamId: Int): Option[String] = synchronized {
-    inputStreams.find(_.id == streamId).map(_.name)
-  }
-
   def generateJobs(time: Time): Seq[Job] = {
     logDebug("Generating jobs for time " + time)
     val jobs = this.synchronized {
-      outputStreams.flatMap { outputStream =>
-        val jobOption = outputStream.generateJob(time)
-        jobOption.foreach(_.setCallSite(outputStream.creationSite))
-        jobOption
-      }
+      outputStreams.flatMap(outputStream => outputStream.generateJob(time))
     }
     logDebug("Generated " + jobs.length + " jobs for time " + time)
     jobs
@@ -157,10 +153,10 @@ final private[streaming] class DStreamGraph extends Serializable with Logging {
 
   def validate() {
     this.synchronized {
-      require(batchDuration != null, "Batch duration has not been set")
+      assert(batchDuration != null, "Batch duration has not been set")
       // assert(batchDuration >= Milliseconds(100), "Batch duration of " + batchDuration +
       // " is very low")
-      require(getOutputStreams().nonEmpty, "No output operations registered, so nothing to execute")
+      assert(getOutputStreams().size > 0, "No output streams registered, so nothing to execute")
     }
   }
 
@@ -169,8 +165,7 @@ final private[streaming] class DStreamGraph extends Serializable with Logging {
    * safe remember duration which can be used to perform cleanup operations.
    */
   def getMaxInputStreamRememberDuration(): Duration = {
-    // If an InputDStream is not used, its `rememberDuration` will be null and we can ignore them
-    inputStreams.map(_.rememberDuration).filter(_ != null).maxBy(_.milliseconds)
+    inputStreams.map { _.rememberDuration }.maxBy { _.milliseconds }
   }
 
   @throws(classOf[IOException])

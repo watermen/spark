@@ -1,4 +1,3 @@
-from __future__ import print_function
 #
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
@@ -18,7 +17,7 @@ from __future__ import print_function
 
 import sys
 
-from pyspark.sql import SparkSession
+from pyspark import SparkContext
 
 """
 Read data file users.parquet in local Spark distro:
@@ -36,33 +35,27 @@ $ ./bin/spark-submit --driver-class-path /path/to/example/jar \\
 """
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("""
+        print >> sys.stderr, """
         Usage: parquet_inputformat.py <data_file>
 
         Run with example jar:
         ./bin/spark-submit --driver-class-path /path/to/example/jar \\
                 /path/to/examples/parquet_inputformat.py <data_file>
         Assumes you have Parquet data stored in <data_file>.
-        """, file=sys.stderr)
+        """
         exit(-1)
 
     path = sys.argv[1]
-
-    spark = SparkSession\
-        .builder\
-        .appName("ParquetInputFormat")\
-        .getOrCreate()
-
-    sc = spark.sparkContext
+    sc = SparkContext(appName="ParquetInputFormat")
 
     parquet_rdd = sc.newAPIHadoopFile(
         path,
-        'org.apache.parquet.avro.AvroParquetInputFormat',
+        'parquet.avro.AvroParquetInputFormat',
         'java.lang.Void',
         'org.apache.avro.generic.IndexedRecord',
         valueConverter='org.apache.spark.examples.pythonconverters.IndexedRecordToJavaConverter')
     output = parquet_rdd.map(lambda x: x[1]).collect()
     for k in output:
-        print(k)
+        print k
 
-    spark.stop()
+    sc.stop()

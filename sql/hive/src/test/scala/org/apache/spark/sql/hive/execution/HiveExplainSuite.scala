@@ -18,37 +18,35 @@
 package org.apache.spark.sql.hive.execution
 
 import org.apache.spark.sql.QueryTest
-import org.apache.spark.sql.catalyst.parser.ParseException
-import org.apache.spark.sql.hive.test.TestHiveSingleton
-import org.apache.spark.sql.test.SQLTestUtils
+import org.apache.spark.sql.hive.test.TestHive._
 
 /**
  * A set of tests that validates support for Hive Explain command.
  */
-class HiveExplainSuite extends QueryTest with SQLTestUtils with TestHiveSingleton {
-
+class HiveExplainSuite extends QueryTest {
   test("explain extended command") {
-    checkKeywordsExist(sql(" explain   select * from src where key=123 "),
+    checkExistence(sql(" explain   select * from src where key=123 "), true,
                    "== Physical Plan ==")
-    checkKeywordsNotExist(sql(" explain   select * from src where key=123 "),
+    checkExistence(sql(" explain   select * from src where key=123 "), false,
                    "== Parsed Logical Plan ==",
                    "== Analyzed Logical Plan ==",
                    "== Optimized Logical Plan ==")
-    checkKeywordsExist(sql(" explain   extended select * from src where key=123 "),
+    checkExistence(sql(" explain   extended select * from src where key=123 "), true,
                    "== Parsed Logical Plan ==",
                    "== Analyzed Logical Plan ==",
                    "== Optimized Logical Plan ==",
-                   "== Physical Plan ==")
+                   "== Physical Plan ==",
+                   "Code Generation", "== RDD ==")
   }
 
   test("explain create table command") {
-    checkKeywordsExist(sql("explain create table temp__b as select * from src limit 2"),
+    checkExistence(sql("explain create table temp__b as select * from src limit 2"), true,
                    "== Physical Plan ==",
                    "InsertIntoHiveTable",
                    "Limit",
                    "src")
 
-    checkKeywordsExist(sql("explain extended create table temp__b as select * from src limit 2"),
+    checkExistence(sql("explain extended create table temp__b as select * from src limit 2"), true,
       "== Parsed Logical Plan ==",
       "== Analyzed Logical Plan ==",
       "== Optimized Logical Plan ==",
@@ -58,7 +56,7 @@ class HiveExplainSuite extends QueryTest with SQLTestUtils with TestHiveSingleto
       "Limit",
       "src")
 
-    checkKeywordsExist(sql(
+    checkExistence(sql(
       """
         | EXPLAIN EXTENDED CREATE TABLE temp__b
         | ROW FORMAT SERDE "org.apache.hadoop.hive.serde2.columnar.ColumnarSerDe"
@@ -66,7 +64,7 @@ class HiveExplainSuite extends QueryTest with SQLTestUtils with TestHiveSingleto
         | STORED AS RCFile
         | TBLPROPERTIES("tbl_p1"="p11", "tbl_p2"="p22")
         | AS SELECT * FROM src LIMIT 2
-      """.stripMargin),
+      """.stripMargin), true,
       "== Parsed Logical Plan ==",
       "== Analyzed Logical Plan ==",
       "== Optimized Logical Plan ==",
@@ -75,49 +73,5 @@ class HiveExplainSuite extends QueryTest with SQLTestUtils with TestHiveSingleto
       "InsertIntoHiveTable",
       "Limit",
       "src")
-  }
-
-  test("SPARK-6212: The EXPLAIN output of CTAS only shows the analyzed plan") {
-    withTempTable("jt") {
-      val rdd = sparkContext.parallelize((1 to 10).map(i => s"""{"a":$i, "b":"str$i"}"""))
-      hiveContext.read.json(rdd).createOrReplaceTempView("jt")
-      val outputs = sql(
-        s"""
-           |EXPLAIN EXTENDED
-           |CREATE TABLE t1
-           |AS
-           |SELECT * FROM jt
-         """.stripMargin).collect().map(_.mkString).mkString
-
-      val shouldContain =
-        "== Parsed Logical Plan ==" :: "== Analyzed Logical Plan ==" :: "Subquery" ::
-        "== Optimized Logical Plan ==" :: "== Physical Plan ==" ::
-        "CreateTableAsSelect" :: "InsertIntoHiveTable" :: "jt" :: Nil
-      for (key <- shouldContain) {
-        assert(outputs.contains(key), s"$key doesn't exist in result")
-      }
-
-      val physicalIndex = outputs.indexOf("== Physical Plan ==")
-      assert(!outputs.substring(physicalIndex).contains("Subquery"),
-        "Physical Plan should not contain Subquery since it's eliminated by optimizer")
-    }
-  }
-
-  test("EXPLAIN CODEGEN command") {
-    checkKeywordsExist(sql("EXPLAIN CODEGEN SELECT 1"),
-      "WholeStageCodegen",
-      "Generated code:",
-      "/* 001 */ public Object generate(Object[] references) {",
-      "/* 002 */   return new GeneratedIterator(references);",
-      "/* 003 */ }"
-    )
-
-    checkKeywordsNotExist(sql("EXPLAIN CODEGEN SELECT 1"),
-      "== Physical Plan =="
-    )
-
-    intercept[ParseException] {
-      sql("EXPLAIN EXTENDED CODEGEN SELECT 1")
-    }
   }
 }

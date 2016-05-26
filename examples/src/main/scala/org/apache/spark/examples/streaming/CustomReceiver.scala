@@ -15,15 +15,12 @@
  * limitations under the License.
  */
 
-// scalastyle:off println
 package org.apache.spark.examples.streaming
 
-import java.io.{BufferedReader, InputStreamReader}
+import java.io.{InputStreamReader, BufferedReader, InputStream}
 import java.net.Socket
-import java.nio.charset.StandardCharsets
 
-import org.apache.spark.SparkConf
-import org.apache.spark.internal.Logging
+import org.apache.spark.{SparkConf, Logging}
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 import org.apache.spark.streaming.receiver.Receiver
@@ -85,8 +82,7 @@ class CustomReceiver(host: String, port: Int)
      logInfo("Connecting to " + host + ":" + port)
      socket = new Socket(host, port)
      logInfo("Connected to " + host + ":" + port)
-     val reader = new BufferedReader(
-       new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))
+     val reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"))
      userInput = reader.readLine()
      while(!isStopped && userInput != null) {
        store(userInput)
@@ -104,4 +100,3 @@ class CustomReceiver(host: String, port: Int)
    }
   }
 }
-// scalastyle:on println

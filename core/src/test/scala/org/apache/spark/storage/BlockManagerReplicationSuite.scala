@@ -22,86 +22,79 @@ import scala.concurrent.duration._
 import scala.language.implicitConversions
 import scala.language.postfixOps
 
+import akka.actor.{ActorSystem, Props}
 import org.mockito.Mockito.{mock, when}
-import org.scalatest.{BeforeAndAfter, Matchers}
+import org.scalatest.{BeforeAndAfter, FunSuite, Matchers, PrivateMethodTester}
 import org.scalatest.concurrent.Eventually._
 
-import org.apache.spark._
-import org.apache.spark.broadcast.BroadcastManager
-import org.apache.spark.memory.UnifiedMemoryManager
+import org.apache.spark.{MapOutputTrackerMaster, SparkConf, SparkContext, SecurityManager}
 import org.apache.spark.network.BlockTransferService
-import org.apache.spark.network.netty.NettyBlockTransferService
-import org.apache.spark.rpc.RpcEnv
+import org.apache.spark.network.nio.NioBlockTransferService
 import org.apache.spark.scheduler.LiveListenerBus
-import org.apache.spark.serializer.{KryoSerializer, SerializerManager}
-import org.apache.spark.shuffle.sort.SortShuffleManager
+import org.apache.spark.serializer.KryoSerializer
+import org.apache.spark.shuffle.hash.HashShuffleManager
 import org.apache.spark.storage.StorageLevel._
+import org.apache.spark.util.{AkkaUtils, SizeEstimator}
 
 /** Testsuite that tests block replication in BlockManager */
-class BlockManagerReplicationSuite extends SparkFunSuite with Matchers with BeforeAndAfter {
+class BlockManagerReplicationSuite extends FunSuite with Matchers with BeforeAndAfter {
 
-  private val conf = new SparkConf(false).set("spark.app.id", "test")
-  private var rpcEnv: RpcEnv = null
-  private var master: BlockManagerMaster = null
-  private val securityMgr = new SecurityManager(conf)
-  private val bcastManager = new BroadcastManager(true, conf, securityMgr)
-  private val mapOutputTracker = new MapOutputTrackerMaster(conf, bcastManager, true)
-  private val shuffleManager = new SortShuffleManager(conf)
+  private val conf = new SparkConf(false)
+  var actorSystem: ActorSystem = null
+  var master: BlockManagerMaster = null
+  val securityMgr = new SecurityManager(conf)
+  val mapOutputTracker = new MapOutputTrackerMaster(conf)
+  val shuffleManager = new HashShuffleManager(conf)
 
   // List of block manager created during an unit test, so that all of the them can be stopped
   // after the unit test.
-  private val allStores = new ArrayBuffer[BlockManager]
+  val allStores = new ArrayBuffer[BlockManager]
 
   // Reuse a serializer across tests to avoid creating a new thread-local buffer on each test
-  conf.set("spark.kryoserializer.buffer", "1m")
-  private val serializer = new KryoSerializer(conf)
+  conf.set("spark.kryoserializer.buffer.mb", "1")
+  val serializer = new KryoSerializer(conf)
 
   // Implicitly convert strings to BlockIds for test clarity.
-  private implicit def StringToBlockId(value: String): BlockId = new TestBlockId(value)
+  implicit def StringToBlockId(value: String): BlockId = new TestBlockId(value)
 
   private def makeBlockManager(
       maxMem: Long,
       name: String = SparkContext.DRIVER_IDENTIFIER): BlockManager = {
-    conf.set("spark.testing.memory", maxMem.toString)
-    conf.set("spark.memory.offHeap.size", maxMem.toString)
-    val transfer = new NettyBlockTransferService(conf, securityMgr, "localhost", numCores = 1)
-    val memManager = UnifiedMemoryManager(conf, numCores = 1)
-    val serializerManager = new SerializerManager(serializer, conf)
-    val store = new BlockManager(name, rpcEnv, master, serializerManager, conf,
-      memManager, mapOutputTracker, shuffleManager, transfer, securityMgr, 0)
-    memManager.setMemoryStore(store.memoryStore)
+    val transfer = new NioBlockTransferService(conf, securityMgr)
+    val store = new BlockManager(name, actorSystem, master, serializer, maxMem, conf,
+      mapOutputTracker, shuffleManager, transfer, securityMgr, 0)
     store.initialize("app-id")
     allStores += store
     store
   }
 
   before {
-    rpcEnv = RpcEnv.create("test", "localhost", 0, conf, securityMgr)
+    val (actorSystem, boundPort) = AkkaUtils.createActorSystem(
+      "test", "localhost", 0, conf = conf, securityManager = securityMgr)
+    this.actorSystem = actorSystem
 
     conf.set("spark.authenticate", "false")
-    conf.set("spark.driver.port", rpcEnv.address.port.toString)
-    conf.set("spark.testing", "true")
-    conf.set("spark.memory.fraction", "1")
-    conf.set("spark.memory.storageFraction", "1")
+    conf.set("spark.driver.port", boundPort.toString)
     conf.set("spark.storage.unrollFraction", "0.4")
     conf.set("spark.storage.unrollMemoryThreshold", "512")
 
     // to make a replication attempt to inactive store fail fast
-    conf.set("spark.core.connection.ack.wait.timeout", "1s")
+    conf.set("spark.core.connection.ack.wait.timeout", "1")
     // to make cached peers refresh frequently
     conf.set("spark.storage.cachedPeersTtl", "10")
 
-    master = new BlockManagerMaster(rpcEnv.setupEndpoint("blockmanager",
-      new BlockManagerMasterEndpoint(rpcEnv, true, conf, new LiveListenerBus)), conf, true)
+    master = new BlockManagerMaster(
+      actorSystem.actorOf(Props(new BlockManagerMasterActor(true, conf, new LiveListenerBus))),
+      conf, true)
     allStores.clear()
   }
 
   after {
     allStores.foreach { _.stop() }
     allStores.clear()
-    rpcEnv.shutdown()
-    rpcEnv.awaitTermination()
-    rpcEnv = null
+    actorSystem.shutdown()
+    actorSystem.awaitTermination()
+    actorSystem = null
     master = null
   }
 
@@ -177,10 +170,6 @@ class BlockManagerReplicationSuite extends SparkFunSuite with Matchers with Befo
       MEMORY_ONLY
     )
     testReplication(5, storageLevels)
-  }
-
-  test("block replication - off-heap") {
-    testReplication(2, Seq(OFF_HEAP, StorageLevel(true, true, true, false, 2)))
   }
 
   test("block replication - 2x replication without peers") {
@@ -273,12 +262,8 @@ class BlockManagerReplicationSuite extends SparkFunSuite with Matchers with Befo
     val failableTransfer = mock(classOf[BlockTransferService]) // this wont actually work
     when(failableTransfer.hostName).thenReturn("some-hostname")
     when(failableTransfer.port).thenReturn(1000)
-    conf.set("spark.testing.memory", "10000")
-    val memManager = UnifiedMemoryManager(conf, numCores = 1)
-    val serializerManager = new SerializerManager(serializer, conf)
-    val failableStore = new BlockManager("failable-store", rpcEnv, master, serializerManager, conf,
-      memManager, mapOutputTracker, shuffleManager, failableTransfer, securityMgr, 0)
-    memManager.setMemoryStore(failableStore.memoryStore)
+    val failableStore = new BlockManager("failable-store", actorSystem, master, serializer,
+      10000, conf, mapOutputTracker, shuffleManager, failableTransfer, securityMgr, 0)
     failableStore.initialize("app-id")
     allStores += failableStore // so that this gets stopped after test
     assert(master.getPeers(store.blockManagerId).toSet === Set(failableStore.blockManagerId))
@@ -380,9 +365,7 @@ class BlockManagerReplicationSuite extends SparkFunSuite with Matchers with Befo
         testStore => blockLocations.contains(testStore.blockManagerId.executorId)
       }.foreach { testStore =>
         val testStoreName = testStore.blockManagerId.executorId
-        assert(
-          testStore.getLocalValues(blockId).isDefined, s"$blockId was not found in $testStoreName")
-        testStore.releaseLock(blockId)
+        assert(testStore.getLocal(blockId).isDefined, s"$blockId was not found in $testStoreName")
         assert(master.getLocations(blockId).map(_.executorId).toSet.contains(testStoreName),
           s"master does not have status for ${blockId.name} in $testStoreName")
 
@@ -404,14 +387,10 @@ class BlockManagerReplicationSuite extends SparkFunSuite with Matchers with Befo
         // If the block is supposed to be in memory, then drop the copy of the block in
         // this store test whether master is updated with zero memory usage this store
         if (storageLevel.useMemory) {
-          val sl = if (storageLevel.useOffHeap) {
-            StorageLevel(false, true, true, false, 1)
-          } else {
-            MEMORY_ONLY_SER
-          }
           // Force the block to be dropped by adding a number of dummy blocks
           (1 to 10).foreach {
-            i => testStore.putSingle(s"dummy-block-$i", new Array[Byte](1000), sl)
+            i =>
+              testStore.putSingle(s"dummy-block-$i", new Array[Byte](1000), MEMORY_ONLY_SER)
           }
           (1 to 10).foreach {
             i => testStore.removeBlock(s"dummy-block-$i")

@@ -17,10 +17,9 @@
 
 package org.apache.spark.streaming.dstream
 
-import scala.reflect.ClassTag
-
-import org.apache.spark.rdd.RDD
 import org.apache.spark.streaming.{Duration, Time}
+import org.apache.spark.rdd.RDD
+import scala.reflect.ClassTag
 
 private[streaming]
 class FilteredDStream[T: ClassTag](
@@ -28,7 +27,7 @@ class FilteredDStream[T: ClassTag](
     filterFunc: T => Boolean
   ) extends DStream[T](parent.ssc) {
 
-  override def dependencies: List[DStream[_]] = List(parent)
+  override def dependencies = List(parent)
 
   override def slideDuration: Duration = parent.slideDuration
 

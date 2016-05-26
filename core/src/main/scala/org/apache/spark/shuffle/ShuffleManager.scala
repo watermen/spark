@@ -17,7 +17,7 @@
 
 package org.apache.spark.shuffle
 
-import org.apache.spark.{ShuffleDependency, TaskContext}
+import org.apache.spark.{TaskContext, ShuffleDependency}
 
 /**
  * Pluggable interface for shuffle systems. A ShuffleManager is created in SparkEnv on the driver
@@ -28,7 +28,6 @@ import org.apache.spark.{ShuffleDependency, TaskContext}
  * boolean isDriver as parameters.
  */
 private[spark] trait ShuffleManager {
-
   /**
    * Register a shuffle with the manager and obtain a handle for it to pass to tasks.
    */
@@ -51,15 +50,12 @@ private[spark] trait ShuffleManager {
       context: TaskContext): ShuffleReader[K, C]
 
   /**
-   * Remove a shuffle's metadata from the ShuffleManager.
-   * @return true if the metadata removed successfully, otherwise false.
-   */
+    * Remove a shuffle's metadata from the ShuffleManager.
+    * @return true if the metadata removed successfully, otherwise false.
+    */
   def unregisterShuffle(shuffleId: Int): Boolean
 
-  /**
-   * Return a resolver capable of retrieving shuffle block data based on block coordinates.
-   */
-  def shuffleBlockResolver: ShuffleBlockResolver
+  def shuffleBlockManager: ShuffleBlockManager
 
   /** Shut down this ShuffleManager. */
   def stop(): Unit

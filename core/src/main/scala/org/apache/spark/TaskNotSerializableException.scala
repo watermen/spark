@@ -17,6 +17,8 @@
 
 package org.apache.spark
 
+import org.apache.spark.annotation.DeveloperApi
+
 /**
  * Exception thrown when a task cannot be serialized.
  */

@@ -7,6 +7,8 @@
 
 package org.apache.spark.repl
 
+import org.apache.spark.annotation.DeveloperApi
+
 import scala.tools.nsc._
 import scala.tools.nsc.interpreter._
 
@@ -14,9 +16,7 @@ import scala.tools.jline._
 import scala.tools.jline.console.completer._
 import Completion._
 import scala.collection.mutable.ListBuffer
-
-import org.apache.spark.annotation.DeveloperApi
-import org.apache.spark.internal.Logging
+import org.apache.spark.Logging
 
 /**
  * Represents an auto-completion tool for the supplied interpreter that

@@ -17,39 +17,39 @@
 
 package org.apache.spark.api.python
 
-import java.{util => ju}
-import java.io.{DataInput, DataOutput}
-import java.nio.charset.StandardCharsets
+import java.io.{DataOutput, DataInput}
 
-import scala.collection.JavaConverters._
+import com.google.common.base.Charsets.UTF_8
 
 import org.apache.hadoop.io._
 import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat
-
-import org.apache.spark.SparkException
 import org.apache.spark.api.java.JavaSparkContext
+import org.apache.spark.{SparkContext, SparkException}
 
 /**
  * A class to test Pyrolite serialization on the Scala side, that will be deserialized
  * in Python
+ * @param str
+ * @param int
+ * @param double
  */
 case class TestWritable(var str: String, var int: Int, var double: Double) extends Writable {
   def this() = this("", 0, 0.0)
 
-  def getStr: String = str
+  def getStr = str
   def setStr(str: String) { this.str = str }
-  def getInt: Int = int
+  def getInt = int
   def setInt(int: Int) { this.int = int }
-  def getDouble: Double = double
+  def getDouble = double
   def setDouble(double: Double) { this.double = double }
 
-  def write(out: DataOutput): Unit = {
+  def write(out: DataOutput) = {
     out.writeUTF(str)
     out.writeInt(int)
     out.writeDouble(double)
   }
 
-  def readFields(in: DataInput): Unit = {
+  def readFields(in: DataInput) = {
     str = in.readUTF()
     int = in.readInt()
     double = in.readDouble()
@@ -57,34 +57,36 @@ case class TestWritable(var str: String, var int: Int, var double: Double) exten
 }
 
 private[python] class TestInputKeyConverter extends Converter[Any, Any] {
-  override def convert(obj: Any): Char = {
+  override def convert(obj: Any) = {
     obj.asInstanceOf[IntWritable].get().toChar
   }
 }
 
 private[python] class TestInputValueConverter extends Converter[Any, Any] {
-  override def convert(obj: Any): ju.List[Double] = {
+  import collection.JavaConversions._
+  override def convert(obj: Any) = {
     val m = obj.asInstanceOf[MapWritable]
-    m.keySet.asScala.map(_.asInstanceOf[DoubleWritable].get()).toSeq.asJava
+    seqAsJavaList(m.keySet.map(w => w.asInstanceOf[DoubleWritable].get()).toSeq)
   }
 }
 
 private[python] class TestOutputKeyConverter extends Converter[Any, Any] {
-  override def convert(obj: Any): Text = {
+  override def convert(obj: Any) = {
     new Text(obj.asInstanceOf[Int].toString)
   }
 }
 
 private[python] class TestOutputValueConverter extends Converter[Any, Any] {
-  override def convert(obj: Any): DoubleWritable = {
-    new DoubleWritable(obj.asInstanceOf[java.util.Map[Double, _]].keySet().iterator().next())
+  import collection.JavaConversions._
+  override def convert(obj: Any) = {
+    new DoubleWritable(obj.asInstanceOf[java.util.Map[Double, _]].keySet().head)
   }
 }
 
 private[python] class DoubleArrayWritable extends ArrayWritable(classOf[DoubleWritable])
 
 private[python] class DoubleArrayToWritableConverter extends Converter[Any, Writable] {
-  override def convert(obj: Any): DoubleArrayWritable = obj match {
+  override def convert(obj: Any) = obj match {
     case arr if arr.getClass.isArray && arr.getClass.getComponentType == classOf[Double] =>
       val daw = new DoubleArrayWritable
       daw.set(arr.asInstanceOf[Array[Double]].map(new DoubleWritable(_)))
@@ -105,6 +107,7 @@ private[python] class WritableToDoubleArrayConverter extends Converter[Any, Arra
  * given directory (probably a temp directory)
  */
 object WriteInputFormatTestDataGenerator {
+  import SparkContext._
 
   def main(args: Array[String]) {
     val path = args(0)
@@ -134,7 +137,7 @@ object WriteInputFormatTestDataGenerator {
     sc.parallelize(intKeys).saveAsSequenceFile(intPath)
     sc.parallelize(intKeys.map{ case (k, v) => (k.toDouble, v) }).saveAsSequenceFile(doublePath)
     sc.parallelize(intKeys.map{ case (k, v) => (k.toString, v) }).saveAsSequenceFile(textPath)
-    sc.parallelize(intKeys.map{ case (k, v) => (k, v.getBytes(StandardCharsets.UTF_8)) }
+    sc.parallelize(intKeys.map{ case (k, v) => (k, v.getBytes(UTF_8)) }
       ).saveAsSequenceFile(bytesPath)
     val bools = Seq((1, true), (2, true), (2, false), (3, true), (2, false), (1, false))
     sc.parallelize(bools).saveAsSequenceFile(boolPath)

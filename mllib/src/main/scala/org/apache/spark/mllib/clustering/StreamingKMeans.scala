@@ -19,17 +19,17 @@ package org.apache.spark.mllib.clustering
 
 import scala.reflect.ClassTag
 
-import org.apache.spark.annotation.Since
-import org.apache.spark.api.java.JavaSparkContext._
-import org.apache.spark.internal.Logging
+import org.apache.spark.Logging
+import org.apache.spark.SparkContext._
+import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.mllib.linalg.{BLAS, Vector, Vectors}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.streaming.api.java.{JavaDStream, JavaPairDStream}
 import org.apache.spark.streaming.dstream.DStream
 import org.apache.spark.util.Utils
 import org.apache.spark.util.random.XORShiftRandom
 
 /**
+ * :: DeveloperApi ::
  * StreamingKMeansModel extends MLlib's KMeansModel for streaming
  * algorithms, so it can keep track of a continuously updated weight
  * associated with each cluster, and also update the model by
@@ -39,10 +39,8 @@ import org.apache.spark.util.random.XORShiftRandom
  * generalized to incorporate forgetfullness (i.e. decay).
  * The update rule (for each cluster) is:
  *
- * {{{
  * c_t+1 = [(c_t * n_t * a) + (x_t * m_t)] / [n_t + m_t]
  * n_t+t = n_t * a + m_t
- * }}}
  *
  * Where c_t is the previously estimated centroid for that cluster,
  * n_t is the number of points assigned to it thus far, x_t is the centroid
@@ -61,17 +59,14 @@ import org.apache.spark.util.random.XORShiftRandom
  * such that at time t + h the discount applied to the data from t is 0.5.
  * The definition remains the same whether the time unit is given
  * as batches or points.
+ *
  */
-@Since("1.2.0")
-class StreamingKMeansModel @Since("1.2.0") (
-    @Since("1.2.0") override val clusterCenters: Array[Vector],
-    @Since("1.2.0") val clusterWeights: Array[Double])
-  extends KMeansModel(clusterCenters) with Logging {
+@DeveloperApi
+class StreamingKMeansModel(
+    override val clusterCenters: Array[Vector],
+    val clusterWeights: Array[Double]) extends KMeansModel(clusterCenters) with Logging {
 
-  /**
-   * Perform a k-means update on a batch of data.
-   */
-  @Since("1.2.0")
+  /** Perform a k-means update on a batch of data. */
   def update(data: RDD[Vector], decayFactor: Double, timeUnit: String): StreamingKMeansModel = {
 
     // find nearest cluster to each point
@@ -83,7 +78,6 @@ class StreamingKMeansModel @Since("1.2.0") (
       (p1._1, p1._2 + p2._2)
     }
     val dim = clusterCenters(0).size
-
     val pointStats: Array[(Int, (Vector, Long))] = closest
       .aggregateByKey((Vectors.zeros(dim), 0L))(mergeContribs, mergeContribs)
       .collect()
@@ -146,6 +140,7 @@ class StreamingKMeansModel @Since("1.2.0") (
 }
 
 /**
+ * :: DeveloperApi ::
  * StreamingKMeans provides methods for configuring a
  * streaming k-means analysis, training the model on streaming,
  * and using the model to make predictions on streaming data.
@@ -154,56 +149,36 @@ class StreamingKMeansModel @Since("1.2.0") (
  * Use a builder pattern to construct a streaming k-means analysis
  * in an application, like:
  *
- * {{{
  *  val model = new StreamingKMeans()
  *    .setDecayFactor(0.5)
  *    .setK(3)
  *    .setRandomCenters(5, 100.0)
  *    .trainOn(DStream)
- * }}}
  */
-@Since("1.2.0")
-class StreamingKMeans @Since("1.2.0") (
-    @Since("1.2.0") var k: Int,
-    @Since("1.2.0") var decayFactor: Double,
-    @Since("1.2.0") var timeUnit: String) extends Logging with Serializable {
+@DeveloperApi
+class StreamingKMeans(
+    var k: Int,
+    var decayFactor: Double,
+    var timeUnit: String) extends Logging {
 
-  @Since("1.2.0")
   def this() = this(2, 1.0, StreamingKMeans.BATCHES)
 
   protected var model: StreamingKMeansModel = new StreamingKMeansModel(null, null)
 
-  /**
-   * Set the number of clusters.
-   */
-  @Since("1.2.0")
+  /** Set the number of clusters. */
   def setK(k: Int): this.type = {
-    require(k > 0,
-      s"Number of clusters must be positive but got ${k}")
     this.k = k
     this
   }
 
-  /**
-   * Set the forgetfulness of the previous centroids.
-   */
-  @Since("1.2.0")
+  /** Set the decay factor directly (for forgetful algorithms). */
   def setDecayFactor(a: Double): this.type = {
-    require(a >= 0,
-      s"Decay factor must be nonnegative but got ${a}")
-    this.decayFactor = a
+    this.decayFactor = decayFactor
     this
   }
 
-  /**
-   * Set the half life and time unit ("batches" or "points"). If points, then the decay factor
-   * is raised to the power of number of new points and if batches, then decay factor will be
-   * used as is.
-   */
-  @Since("1.2.0")
+  /** Set the half life and time unit ("batches" or "points") for forgetful algorithms. */
   def setHalfLife(halfLife: Double, timeUnit: String): this.type = {
-    require(halfLife > 0,
-      s"Half life must be positive but got ${halfLife}")
     if (timeUnit != StreamingKMeans.BATCHES && timeUnit != StreamingKMeans.POINTS) {
       throw new IllegalArgumentException("Invalid time unit for decay: " + timeUnit)
     }
@@ -213,17 +188,8 @@ class StreamingKMeans @Since("1.2.0") (
     this
   }
 
-  /**
-   * Specify initial centers directly.
-   */
-  @Since("1.2.0")
+  /** Specify initial centers directly. */
   def setInitialCenters(centers: Array[Vector], weights: Array[Double]): this.type = {
-    require(centers.size == weights.size,
-      "Number of initial centers must be equal to number of weights")
-    require(centers.size == k,
-      s"Number of initial centers must be ${k} but got ${centers.size}")
-    require(weights.forall(_ >= 0),
-      s"Weight for each inital center must be nonnegative but got [${weights.mkString(" ")}]")
     model = new StreamingKMeansModel(centers, weights)
     this
   }
@@ -235,12 +201,7 @@ class StreamingKMeans @Since("1.2.0") (
    * @param weight Weight for each center
    * @param seed Random seed
    */
-  @Since("1.2.0")
   def setRandomCenters(dim: Int, weight: Double, seed: Long = Utils.random.nextLong): this.type = {
-    require(dim > 0,
-      s"Number of dimensions must be positive but got ${dim}")
-    require(weight >= 0,
-      s"Weight for each center must be nonnegative but got ${weight}")
     val random = new XORShiftRandom(seed)
     val centers = Array.fill(k)(Vectors.dense(Array.fill(dim)(random.nextGaussian())))
     val weights = Array.fill(k)(weight)
@@ -248,10 +209,7 @@ class StreamingKMeans @Since("1.2.0") (
     this
   }
 
-  /**
-   * Return the latest model.
-   */
-  @Since("1.2.0")
+  /** Return the latest model. */
   def latestModel(): StreamingKMeansModel = {
     model
   }
@@ -264,7 +222,6 @@ class StreamingKMeans @Since("1.2.0") (
    *
    * @param data DStream containing vector data
    */
-  @Since("1.2.0")
   def trainOn(data: DStream[Vector]) {
     assertInitialized()
     data.foreachRDD { (rdd, time) =>
@@ -273,29 +230,14 @@ class StreamingKMeans @Since("1.2.0") (
   }
 
   /**
-   * Java-friendly version of `trainOn`.
-   */
-  @Since("1.4.0")
-  def trainOn(data: JavaDStream[Vector]): Unit = trainOn(data.dstream)
-
-  /**
    * Use the clustering model to make predictions on batches of data from a DStream.
    *
    * @param data DStream containing vector data
    * @return DStream containing predictions
    */
-  @Since("1.2.0")
   def predictOn(data: DStream[Vector]): DStream[Int] = {
     assertInitialized()
     data.map(model.predict)
-  }
-
-  /**
-   * Java-friendly version of `predictOn`.
-   */
-  @Since("1.4.0")
-  def predictOn(data: JavaDStream[Vector]): JavaDStream[java.lang.Integer] = {
-    JavaDStream.fromDStream(predictOn(data.dstream).asInstanceOf[DStream[java.lang.Integer]])
   }
 
   /**
@@ -305,21 +247,9 @@ class StreamingKMeans @Since("1.2.0") (
    * @tparam K key type
    * @return DStream containing the input keys and the predictions as values
    */
-  @Since("1.2.0")
   def predictOnValues[K: ClassTag](data: DStream[(K, Vector)]): DStream[(K, Int)] = {
     assertInitialized()
     data.mapValues(model.predict)
-  }
-
-  /**
-   * Java-friendly version of `predictOnValues`.
-   */
-  @Since("1.4.0")
-  def predictOnValues[K](
-      data: JavaPairDStream[K, Vector]): JavaPairDStream[K, java.lang.Integer] = {
-    implicit val tag = fakeClassTag[K]
-    JavaPairDStream.fromPairDStream(
-      predictOnValues(data.dstream).asInstanceOf[DStream[(K, java.lang.Integer)]])
   }
 
   /** Check whether cluster centers have been initialized. */

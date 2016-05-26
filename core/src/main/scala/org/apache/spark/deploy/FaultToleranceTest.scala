@@ -19,11 +19,10 @@ package org.apache.spark.deploy
 
 import java.io._
 import java.net.URL
-import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeoutException
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.{Future, Promise}
+import scala.concurrent.{Await, future, promise}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.language.postfixOps
@@ -32,10 +31,8 @@ import scala.sys.process._
 import org.json4s._
 import org.json4s.jackson.JsonMethods
 
-import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.deploy.master.RecoveryState
-import org.apache.spark.internal.Logging
-import org.apache.spark.util.{ThreadUtils, Utils}
+import org.apache.spark.{Logging, SparkConf, SparkContext}
+import org.apache.spark.deploy.master.{RecoveryState, SparkCuratorUtil}
 
 /**
  * This suite tests the fault tolerance of the Spark standalone scheduler, mainly the Master.
@@ -58,29 +55,29 @@ import org.apache.spark.util.{ThreadUtils, Utils}
  *   - The docker images tagged spark-test-master and spark-test-worker are built from the
  *     docker/ directory. Run 'docker/spark-test/build' to generate these.
  */
-private object FaultToleranceTest extends App with Logging {
+private[spark] object FaultToleranceTest extends App with Logging {
 
-  private val conf = new SparkConf()
-  private val ZK_DIR = conf.get("spark.deploy.zookeeper.dir", "/spark")
+  val conf = new SparkConf()
+  val ZK_DIR = conf.get("spark.deploy.zookeeper.dir", "/spark")
 
-  private val masters = ListBuffer[TestMasterInfo]()
-  private val workers = ListBuffer[TestWorkerInfo]()
-  private var sc: SparkContext = _
+  val masters = ListBuffer[TestMasterInfo]()
+  val workers = ListBuffer[TestWorkerInfo]()
+  var sc: SparkContext = _
 
-  private val zk = SparkCuratorUtil.newClient(conf)
+  val zk =  SparkCuratorUtil.newClient(conf)
 
-  private var numPassed = 0
-  private var numFailed = 0
+  var numPassed = 0
+  var numFailed = 0
 
-  private val sparkHome = System.getenv("SPARK_HOME")
+  val sparkHome = System.getenv("SPARK_HOME")
   assertTrue(sparkHome != null, "Run with a valid SPARK_HOME")
 
-  private val containerSparkHome = "/opt/spark"
-  private val dockerMountDir = "%s:%s".format(sparkHome, containerSparkHome)
+  val containerSparkHome = "/opt/spark"
+  val dockerMountDir = "%s:%s".format(sparkHome, containerSparkHome)
 
   System.setProperty("spark.driver.host", "172.17.42.1") // default docker host ip
 
-  private def afterEach() {
+  def afterEach() {
     if (sc != null) {
       sc.stop()
       sc = null
@@ -182,7 +179,7 @@ private object FaultToleranceTest extends App with Logging {
     }
   }
 
-  private def test(name: String)(fn: => Unit) {
+  def test(name: String)(fn: => Unit) {
     try {
       fn
       numPassed += 1
@@ -200,19 +197,19 @@ private object FaultToleranceTest extends App with Logging {
     afterEach()
   }
 
-  private def addMasters(num: Int) {
+  def addMasters(num: Int) {
     logInfo(s">>>>> ADD MASTERS $num <<<<<")
     (1 to num).foreach { _ => masters += SparkDocker.startMaster(dockerMountDir) }
   }
 
-  private def addWorkers(num: Int) {
+  def addWorkers(num: Int) {
     logInfo(s">>>>> ADD WORKERS $num <<<<<")
     val masterUrls = getMasterUrls(masters)
     (1 to num).foreach { _ => workers += SparkDocker.startWorker(dockerMountDir, masterUrls) }
   }
 
   /** Creates a SparkContext, which constructs a Client to interact with our cluster. */
-  private def createClient() = {
+  def createClient() = {
     logInfo(">>>>> CREATE CLIENT <<<<<")
     if (sc != null) { sc.stop() }
     // Counter-hack: Because of a hack in SparkEnv#create() that changes this
@@ -221,17 +218,17 @@ private object FaultToleranceTest extends App with Logging {
     sc = new SparkContext(getMasterUrls(masters), "fault-tolerance", containerSparkHome)
   }
 
-  private def getMasterUrls(masters: Seq[TestMasterInfo]): String = {
+  def getMasterUrls(masters: Seq[TestMasterInfo]): String = {
     "spark://" + masters.map(master => master.ip + ":7077").mkString(",")
   }
 
-  private def getLeader: TestMasterInfo = {
+  def getLeader: TestMasterInfo = {
     val leaders = masters.filter(_.state == RecoveryState.ALIVE)
     assertTrue(leaders.size == 1)
     leaders(0)
   }
 
-  private def killLeader(): Unit = {
+  def killLeader(): Unit = {
     logInfo(">>>>> KILL LEADER <<<<<")
     masters.foreach(_.readState())
     val leader = getLeader
@@ -239,9 +236,9 @@ private object FaultToleranceTest extends App with Logging {
     leader.kill()
   }
 
-  private def delay(secs: Duration = 5.seconds) = Thread.sleep(secs.toMillis)
+  def delay(secs: Duration = 5.seconds) = Thread.sleep(secs.toMillis)
 
-  private def terminateCluster() {
+  def terminateCluster() {
     logInfo(">>>>> TERMINATE CLUSTER <<<<<")
     masters.foreach(_.kill())
     workers.foreach(_.kill())
@@ -250,11 +247,11 @@ private object FaultToleranceTest extends App with Logging {
   }
 
   /** This includes Client retry logic, so it may take a while if the cluster is recovering. */
-  private def assertUsable() = {
-    val f = Future {
+  def assertUsable() = {
+    val f = future {
       try {
         val res = sc.parallelize(0 until 10).collect()
-        assertTrue(res.toList == (0 until 10).toList)
+        assertTrue(res.toList == (0 until 10))
         true
       } catch {
         case e: Exception =>
@@ -265,14 +262,14 @@ private object FaultToleranceTest extends App with Logging {
     }
 
     // Avoid waiting indefinitely (e.g., we could register but get no executors).
-    assertTrue(ThreadUtils.awaitResult(f, 120 seconds))
+    assertTrue(Await.result(f, 120 seconds))
   }
 
   /**
    * Asserts that the cluster is usable and that the expected masters and workers
    * are all alive in a proper configuration (e.g., only one leader).
    */
-  private def assertValidClusterState() = {
+  def assertValidClusterState() = {
     logInfo(">>>>> ASSERT VALID CLUSTER STATE <<<<<")
     assertUsable()
     var numAlive = 0
@@ -285,7 +282,7 @@ private object FaultToleranceTest extends App with Logging {
         numAlive == 1 && numStandby == masters.size - 1 && numLiveApps >= 1
     }
 
-    val f = Future {
+    val f = future {
       try {
         while (!stateValid()) {
           Thread.sleep(1000)
@@ -318,7 +315,7 @@ private object FaultToleranceTest extends App with Logging {
     }
 
     try {
-      assertTrue(ThreadUtils.awaitResult(f, 120 seconds))
+      assertTrue(Await.result(f, 120 seconds))
     } catch {
       case e: TimeoutException =>
         logError("Master states: " + masters.map(_.state))
@@ -328,7 +325,7 @@ private object FaultToleranceTest extends App with Logging {
     }
   }
 
-  private def assertTrue(bool: Boolean, message: String = "") {
+  def assertTrue(bool: Boolean, message: String = "") {
     if (!bool) {
       throw new IllegalStateException("Assertion failed: " + message)
     }
@@ -338,7 +335,7 @@ private object FaultToleranceTest extends App with Logging {
     numFailed))
 }
 
-private class TestMasterInfo(val ip: String, val dockerId: DockerId, val logFile: File)
+private[spark] class TestMasterInfo(val ip: String, val dockerId: DockerId, val logFile: File)
   extends Logging  {
 
   implicit val formats = org.json4s.DefaultFormats
@@ -350,8 +347,7 @@ private class TestMasterInfo(val ip: String, val dockerId: DockerId, val logFile
 
   def readState() {
     try {
-      val masterStream = new InputStreamReader(
-        new URL("http://%s:8080/json".format(ip)).openStream, StandardCharsets.UTF_8)
+      val masterStream = new InputStreamReader(new URL("http://%s:8080/json".format(ip)).openStream)
       val json = JsonMethods.parse(masterStream)
 
       val workers = json \ "workers"
@@ -381,7 +377,7 @@ private class TestMasterInfo(val ip: String, val dockerId: DockerId, val logFile
       format(ip, dockerId.id, logFile.getAbsolutePath, state)
 }
 
-private class TestWorkerInfo(val ip: String, val dockerId: DockerId, val logFile: File)
+private[spark] class TestWorkerInfo(val ip: String, val dockerId: DockerId, val logFile: File)
   extends Logging {
 
   implicit val formats = org.json4s.DefaultFormats
@@ -394,7 +390,7 @@ private class TestWorkerInfo(val ip: String, val dockerId: DockerId, val logFile
     "[ip=%s, id=%s, logFile=%s]".format(ip, dockerId, logFile.getAbsolutePath)
 }
 
-private object SparkDocker {
+private[spark] object SparkDocker {
   def startMaster(mountDir: String): TestMasterInfo = {
     val cmd = Docker.makeRunCmd("spark-test-master", mountDir = mountDir)
     val (ip, id, outFile) = startNode(cmd)
@@ -408,8 +404,9 @@ private object SparkDocker {
   }
 
   private def startNode(dockerCmd: ProcessBuilder) : (String, DockerId, File) = {
-    val ipPromise = Promise[String]()
-    val outFile = File.createTempFile("fault-tolerance-test", "", Utils.createTempDir())
+    val ipPromise = promise[String]()
+    val outFile = File.createTempFile("fault-tolerance-test", "")
+    outFile.deleteOnExit()
     val outStream: FileWriter = new FileWriter(outFile)
     def findIpAndLog(line: String): Unit = {
       if (line.startsWith("CONTAINER_IP=")) {
@@ -422,17 +419,17 @@ private object SparkDocker {
     }
 
     dockerCmd.run(ProcessLogger(findIpAndLog _))
-    val ip = ThreadUtils.awaitResult(ipPromise.future, 30 seconds)
+    val ip = Await.result(ipPromise.future, 30 seconds)
     val dockerId = Docker.getLastProcessId
     (ip, dockerId, outFile)
   }
 }
 
-private class DockerId(val id: String) {
-  override def toString: String = id
+private[spark] class DockerId(val id: String) {
+  override def toString = id
 }
 
-private object Docker extends Logging {
+private[spark] object Docker extends Logging {
   def makeRunCmd(imageTag: String, args: String = "", mountDir: String = ""): ProcessBuilder = {
     val mountCmd = if (mountDir != "") { " -v " + mountDir } else ""
 

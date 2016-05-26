@@ -17,14 +17,13 @@
 
 package org.apache.spark.mllib.tree.impurity
 
-import org.apache.spark.annotation.{DeveloperApi, Experimental, Since}
+import org.apache.spark.annotation.{DeveloperApi, Experimental}
 
 /**
  * :: Experimental ::
  * Class for calculating [[http://en.wikipedia.org/wiki/Binary_entropy_function entropy]] during
  * binary classification.
  */
-@Since("1.0.0")
 @Experimental
 object Entropy extends Impurity {
 
@@ -37,7 +36,6 @@ object Entropy extends Impurity {
    * @param totalCount sum of counts for all labels
    * @return information value, or 0 if totalCount = 0
    */
-  @Since("1.1.0")
   @DeveloperApi
   override def calculate(counts: Array[Double], totalCount: Double): Double = {
     if (totalCount == 0) {
@@ -65,7 +63,6 @@ object Entropy extends Impurity {
    * @param sumSquares summation of squares of the labels
    * @return information value, or 0 if count = 0
    */
-  @Since("1.0.0")
   @DeveloperApi
   override def calculate(count: Double, sum: Double, sumSquares: Double): Double =
     throw new UnsupportedOperationException("Entropy.calculate")
@@ -74,8 +71,7 @@ object Entropy extends Impurity {
    * Get this impurity instance.
    * This is useful for passing impurity parameters to a Strategy in Java.
    */
-  @Since("1.1.0")
-  def instance: this.type = this
+  def instance = this
 
 }
 
@@ -85,7 +81,7 @@ object Entropy extends Impurity {
  * Note: Instances of this class do not hold the data; they operate on views of the data.
  * @param numClasses  Number of classes for label.
  */
-private[spark] class EntropyAggregator(numClasses: Int)
+private[tree] class EntropyAggregator(numClasses: Int)
   extends ImpurityAggregator(numClasses) with Serializable {
 
   /**
@@ -113,6 +109,7 @@ private[spark] class EntropyAggregator(numClasses: Int)
   def getCalculator(allStats: Array[Double], offset: Int): EntropyCalculator = {
     new EntropyCalculator(allStats.view(offset, offset + statsSize).toArray)
   }
+
 }
 
 /**
@@ -121,7 +118,7 @@ private[spark] class EntropyAggregator(numClasses: Int)
  * (node, feature, bin).
  * @param stats  Array of sufficient statistics for a (node, feature, bin).
  */
-private[spark] class EntropyCalculator(stats: Array[Double]) extends ImpurityCalculator(stats) {
+private[tree] class EntropyCalculator(stats: Array[Double]) extends ImpurityCalculator(stats) {
 
   /**
    * Make a deep copy of this [[ImpurityCalculator]].

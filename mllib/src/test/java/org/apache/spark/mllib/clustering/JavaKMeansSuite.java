@@ -17,23 +17,38 @@
 
 package org.apache.spark.mllib.clustering;
 
-import java.util.Arrays;
+import java.io.Serializable;
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
-
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
+import static org.junit.Assert.*;
 
-import org.apache.spark.SharedSparkSession;
+import com.google.common.collect.Lists;
+
 import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.mllib.linalg.Vector;
 import org.apache.spark.mllib.linalg.Vectors;
 
-public class JavaKMeansSuite extends SharedSparkSession {
+public class JavaKMeansSuite implements Serializable {
+  private transient JavaSparkContext sc;
+
+  @Before
+  public void setUp() {
+    sc = new JavaSparkContext("local", "JavaKMeans");
+  }
+
+  @After
+  public void tearDown() {
+    sc.stop();
+    sc = null;
+  }
 
   @Test
   public void runKMeansUsingStaticMethods() {
-    List<Vector> points = Arrays.asList(
+    List<Vector> points = Lists.newArrayList(
       Vectors.dense(1.0, 2.0, 6.0),
       Vectors.dense(1.0, 3.0, 0.0),
       Vectors.dense(1.0, 4.0, 6.0)
@@ -41,7 +56,7 @@ public class JavaKMeansSuite extends SharedSparkSession {
 
     Vector expectedCenter = Vectors.dense(1.0, 3.0, 4.0);
 
-    JavaRDD<Vector> data = jsc.parallelize(points, 2);
+    JavaRDD<Vector> data = sc.parallelize(points, 2);
     KMeansModel model = KMeans.train(data.rdd(), 1, 1, 1, KMeans.K_MEANS_PARALLEL());
     assertEquals(1, model.clusterCenters().length);
     assertEquals(expectedCenter, model.clusterCenters()[0]);
@@ -52,7 +67,7 @@ public class JavaKMeansSuite extends SharedSparkSession {
 
   @Test
   public void runKMeansUsingConstructor() {
-    List<Vector> points = Arrays.asList(
+    List<Vector> points = Lists.newArrayList(
       Vectors.dense(1.0, 2.0, 6.0),
       Vectors.dense(1.0, 3.0, 0.0),
       Vectors.dense(1.0, 4.0, 6.0)
@@ -60,7 +75,7 @@ public class JavaKMeansSuite extends SharedSparkSession {
 
     Vector expectedCenter = Vectors.dense(1.0, 3.0, 4.0);
 
-    JavaRDD<Vector> data = jsc.parallelize(points, 2);
+    JavaRDD<Vector> data = sc.parallelize(points, 2);
     KMeansModel model = new KMeans().setK(1).setMaxIterations(5).run(data.rdd());
     assertEquals(1, model.clusterCenters().length);
     assertEquals(expectedCenter, model.clusterCenters()[0]);
@@ -75,12 +90,12 @@ public class JavaKMeansSuite extends SharedSparkSession {
 
   @Test
   public void testPredictJavaRDD() {
-    List<Vector> points = Arrays.asList(
+    List<Vector> points = Lists.newArrayList(
       Vectors.dense(1.0, 2.0, 6.0),
       Vectors.dense(1.0, 3.0, 0.0),
       Vectors.dense(1.0, 4.0, 6.0)
     );
-    JavaRDD<Vector> data = jsc.parallelize(points, 2);
+    JavaRDD<Vector> data = sc.parallelize(points, 2);
     KMeansModel model = new KMeans().setK(1).setMaxIterations(5).run(data.rdd());
     JavaRDD<Integer> predictions = model.predict(data);
     // Should be able to get the first prediction.

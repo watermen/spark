@@ -17,29 +17,34 @@
 
 package org.apache.spark.deploy.worker.ui
 
-import javax.servlet.http.HttpServletRequest
-
+import scala.concurrent.Await
 import scala.xml.Node
 
+import akka.pattern.ask
+import javax.servlet.http.HttpServletRequest
 import org.json4s.JValue
 
-import org.apache.spark.deploy.DeployMessages.{RequestWorkerState, WorkerStateResponse}
 import org.apache.spark.deploy.JsonProtocol
+import org.apache.spark.deploy.DeployMessages.{RequestWorkerState, WorkerStateResponse}
 import org.apache.spark.deploy.master.DriverState
 import org.apache.spark.deploy.worker.{DriverRunner, ExecutorRunner}
-import org.apache.spark.ui.{UIUtils, WebUIPage}
+import org.apache.spark.ui.{WebUIPage, UIUtils}
 import org.apache.spark.util.Utils
 
-private[ui] class WorkerPage(parent: WorkerWebUI) extends WebUIPage("") {
-  private val workerEndpoint = parent.worker.self
+private[spark] class WorkerPage(parent: WorkerWebUI) extends WebUIPage("") {
+  val workerActor = parent.worker.self
+  val worker = parent.worker
+  val timeout = parent.timeout
 
   override def renderJson(request: HttpServletRequest): JValue = {
-    val workerState = workerEndpoint.askWithRetry[WorkerStateResponse](RequestWorkerState)
+    val stateFuture = (workerActor ? RequestWorkerState)(timeout).mapTo[WorkerStateResponse]
+    val workerState = Await.result(stateFuture, timeout)
     JsonProtocol.writeWorkerState(workerState)
   }
 
   def render(request: HttpServletRequest): Seq[Node] = {
-    val workerState = workerEndpoint.askWithRetry[WorkerStateResponse](RequestWorkerState)
+    val stateFuture = (workerActor ? RequestWorkerState)(timeout).mapTo[WorkerStateResponse]
+    val workerState = Await.result(stateFuture, timeout)
 
     val executorHeaders = Seq("ExecutorID", "Cores", "State", "Memory", "Job Details", "Logs")
     val runningExecutors = workerState.executors
@@ -129,7 +134,7 @@ private[ui] class WorkerPage(parent: WorkerWebUI) extends WebUIPage("") {
   def driverRow(driver: DriverRunner): Seq[Node] = {
     <tr>
       <td>{driver.driverId}</td>
-      <td>{driver.driverDesc.command.arguments(2)}</td>
+      <td>{driver.driverDesc.command.arguments(1)}</td>
       <td>{driver.finalState.getOrElse(DriverState.RUNNING)}</td>
       <td sorttable_customkey={driver.driverDesc.cores.toString}>
         {driver.driverDesc.cores.toString}

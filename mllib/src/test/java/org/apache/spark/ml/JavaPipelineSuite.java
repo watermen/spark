@@ -17,32 +17,41 @@
 
 package org.apache.spark.ml;
 
-import java.io.IOException;
-
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
-import org.apache.spark.SharedSparkSession;
 import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.mllib.regression.LabeledPoint;
 import org.apache.spark.ml.classification.LogisticRegression;
-import static org.apache.spark.ml.classification.LogisticRegressionSuite.generateLogisticInputAsList;
-import org.apache.spark.ml.feature.LabeledPoint;
 import org.apache.spark.ml.feature.StandardScaler;
-import org.apache.spark.sql.Dataset;
-import org.apache.spark.sql.Row;
+import org.apache.spark.sql.DataFrame;
+import org.apache.spark.sql.SQLContext;
+import static org.apache.spark.mllib.classification.LogisticRegressionSuite.generateLogisticInputAsList;
 
 /**
  * Test Pipeline construction and fitting in Java.
  */
-public class JavaPipelineSuite extends SharedSparkSession {
+public class JavaPipelineSuite {
 
-  private transient Dataset<Row> dataset;
+  private transient JavaSparkContext jsc;
+  private transient SQLContext jsql;
+  private transient DataFrame dataset;
 
-  @Override
-  public void setUp() throws IOException {
-    super.setUp();
+  @Before
+  public void setUp() {
+    jsc = new JavaSparkContext("local", "JavaPipelineSuite");
+    jsql = new SQLContext(jsc);
     JavaRDD<LabeledPoint> points =
       jsc.parallelize(generateLogisticInputAsList(1.0, 1.0, 100, 42), 2);
-    dataset = spark.createDataFrame(points, LabeledPoint.class);
+    dataset = jsql.applySchema(points, LabeledPoint.class);
+  }
+
+  @After
+  public void tearDown() {
+    jsc.stop();
+    jsc = null;
   }
 
   @Test
@@ -53,10 +62,10 @@ public class JavaPipelineSuite extends SharedSparkSession {
     LogisticRegression lr = new LogisticRegression()
       .setFeaturesCol("scaledFeatures");
     Pipeline pipeline = new Pipeline()
-      .setStages(new PipelineStage[]{scaler, lr});
+      .setStages(new PipelineStage[] {scaler, lr});
     PipelineModel model = pipeline.fit(dataset);
-    model.transform(dataset).createOrReplaceTempView("prediction");
-    Dataset<Row> predictions = spark.sql("SELECT label, probability, prediction FROM prediction");
+    model.transform(dataset).registerTempTable("prediction");
+    DataFrame predictions = jsql.sql("SELECT label, score, prediction FROM prediction");
     predictions.collectAsList();
   }
 }

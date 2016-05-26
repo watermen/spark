@@ -15,16 +15,24 @@
 # limitations under the License.
 #
 
-from pyspark.mllib.common import inherit_doc, JavaModelWrapper
+from pyspark.mllib.common import JavaModelWrapper
 
 
-__all__ = ["ChiSqTestResult", "KolmogorovSmirnovTestResult"]
+__all__ = ["ChiSqTestResult"]
 
 
-class TestResult(JavaModelWrapper):
+class ChiSqTestResult(JavaModelWrapper):
     """
-    Base class for all test results.
+    .. note:: Experimental
+
+    Object containing the test results for the chi-squared hypothesis test.
     """
+    @property
+    def method(self):
+        """
+        Name of the test method
+        """
+        return self._java_model.method()
 
     @property
     def pValue(self):
@@ -59,24 +67,3 @@ class TestResult(JavaModelWrapper):
 
     def __str__(self):
         return self._java_model.toString()
-
-
-@inherit_doc
-class ChiSqTestResult(TestResult):
-    """
-    Contains test results for the chi-squared hypothesis test.
-    """
-
-    @property
-    def method(self):
-        """
-        Name of the test method
-        """
-        return self._java_model.method()
-
-
-@inherit_doc
-class KolmogorovSmirnovTestResult(TestResult):
-    """
-    Contains test results for the Kolmogorov-Smirnov test.
-    """

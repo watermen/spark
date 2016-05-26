@@ -17,15 +17,13 @@
 
 package org.apache.spark.deploy.master
 
-import scala.annotation.tailrec
-
 import org.apache.spark.SparkConf
 import org.apache.spark.util.{IntParam, Utils}
 
 /**
  * Command-line parser for the master.
  */
-private[master] class MasterArguments(args: Array[String], conf: SparkConf) {
+private[spark] class MasterArguments(args: Array[String], conf: SparkConf) {
   var host = Utils.localHostName()
   var port = 7077
   var webUiPort = 8080
@@ -51,8 +49,7 @@ private[master] class MasterArguments(args: Array[String], conf: SparkConf) {
     webUiPort = conf.get("spark.master.ui.port").toInt
   }
 
-  @tailrec
-  private def parse(args: List[String]): Unit = args match {
+  def parse(args: List[String]): Unit = args match {
     case ("--ip" | "-i") :: value :: tail =>
       Utils.checkHost(value, "ip no longer supported, please use hostname " + value)
       host = value
@@ -78,7 +75,7 @@ private[master] class MasterArguments(args: Array[String], conf: SparkConf) {
     case ("--help") :: tail =>
       printUsageAndExit(0)
 
-    case Nil => // No-op
+    case Nil => {}
 
     case _ =>
       printUsageAndExit(1)
@@ -87,8 +84,7 @@ private[master] class MasterArguments(args: Array[String], conf: SparkConf) {
   /**
    * Print usage and exit JVM with the given exit code.
    */
-  private def printUsageAndExit(exitCode: Int) {
-    // scalastyle:off println
+  def printUsageAndExit(exitCode: Int) {
     System.err.println(
       "Usage: Master [options]\n" +
       "\n" +
@@ -99,7 +95,6 @@ private[master] class MasterArguments(args: Array[String], conf: SparkConf) {
       "  --webui-port PORT      Port for web UI (default: 8080)\n" +
       "  --properties-file FILE Path to a custom Spark properties file.\n" +
       "                         Default is conf/spark-defaults.conf.")
-    // scalastyle:on println
     System.exit(exitCode)
   }
 }

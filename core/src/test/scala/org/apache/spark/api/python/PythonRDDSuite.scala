@@ -18,11 +18,10 @@
 package org.apache.spark.api.python
 
 import java.io.{ByteArrayOutputStream, DataOutputStream}
-import java.nio.charset.StandardCharsets
 
-import org.apache.spark.SparkFunSuite
+import org.scalatest.FunSuite
 
-class PythonRDDSuite extends SparkFunSuite {
+class PythonRDDSuite extends FunSuite {
 
   test("Writing large strings to the worker") {
     val input: List[String] = List("a"*100000)
@@ -36,12 +35,10 @@ class PythonRDDSuite extends SparkFunSuite {
     // The correctness will be tested in Python
     PythonRDD.writeIteratorToStream(Iterator("a", null), buffer)
     PythonRDD.writeIteratorToStream(Iterator(null, "a"), buffer)
-    PythonRDD.writeIteratorToStream(Iterator("a".getBytes(StandardCharsets.UTF_8), null), buffer)
-    PythonRDD.writeIteratorToStream(Iterator(null, "a".getBytes(StandardCharsets.UTF_8)), buffer)
+    PythonRDD.writeIteratorToStream(Iterator("a".getBytes, null), buffer)
+    PythonRDD.writeIteratorToStream(Iterator(null, "a".getBytes), buffer)
     PythonRDD.writeIteratorToStream(Iterator((null, null), ("a", null), (null, "b")), buffer)
-    PythonRDD.writeIteratorToStream(Iterator(
-      (null, null),
-      ("a".getBytes(StandardCharsets.UTF_8), null),
-      (null, "b".getBytes(StandardCharsets.UTF_8))), buffer)
+    PythonRDD.writeIteratorToStream(
+      Iterator((null, null), ("a".getBytes, null), (null, "b".getBytes)), buffer)
   }
 }

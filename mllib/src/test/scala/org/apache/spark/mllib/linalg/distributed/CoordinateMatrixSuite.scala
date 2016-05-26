@@ -17,13 +17,14 @@
 
 package org.apache.spark.mllib.linalg.distributed
 
+import org.scalatest.FunSuite
+
 import breeze.linalg.{DenseMatrix => BDM}
 
-import org.apache.spark.SparkFunSuite
-import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.util.MLlibTestSparkContext
+import org.apache.spark.mllib.linalg.Vectors
 
-class CoordinateMatrixSuite extends SparkFunSuite with MLlibTestSparkContext {
+class CoordinateMatrixSuite extends FunSuite with MLlibTestSparkContext {
 
   val m = 5
   val n = 4

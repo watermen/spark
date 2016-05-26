@@ -17,8 +17,10 @@
 
 package org.apache.spark.mllib.tree.loss
 
-import org.apache.spark.annotation.{DeveloperApi, Since}
-
+import org.apache.spark.annotation.DeveloperApi
+import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.mllib.tree.model.TreeEnsembleModel
+import org.apache.spark.rdd.RDD
 
 /**
  * :: DeveloperApi ::
@@ -28,7 +30,6 @@ import org.apache.spark.annotation.{DeveloperApi, Since}
  *  |y - F(x)|
  * where y is the label and F(x) is the model prediction for features x.
  */
-@Since("1.2.0")
 @DeveloperApi
 object AbsoluteError extends Loss {
 
@@ -36,17 +37,28 @@ object AbsoluteError extends Loss {
    * Method to calculate the gradients for the gradient boosting calculation for least
    * absolute error calculation.
    * The gradient with respect to F(x) is: sign(F(x) - y)
-   * @param prediction Predicted label.
-   * @param label True label.
+   * @param model Ensemble model
+   * @param point Instance of the training dataset
    * @return Loss gradient
    */
-  @Since("1.2.0")
-  override def gradient(prediction: Double, label: Double): Double = {
-    if (label - prediction < 0) 1.0 else -1.0
+  override def gradient(
+      model: TreeEnsembleModel,
+      point: LabeledPoint): Double = {
+    if ((point.label - model.predict(point.features)) < 0) 1.0 else -1.0
   }
 
-  override private[spark] def computeError(prediction: Double, label: Double): Double = {
-    val err = label - prediction
-    math.abs(err)
+  /**
+   * Method to calculate loss of the base learner for the gradient boosting calculation.
+   * Note: This method is not used by the gradient boosting algorithm but is useful for debugging
+   * purposes.
+   * @param model Ensemble model
+   * @param data Training dataset: RDD of [[org.apache.spark.mllib.regression.LabeledPoint]].
+   * @return  Mean absolute error of model on data
+   */
+  override def computeError(model: TreeEnsembleModel, data: RDD[LabeledPoint]): Double = {
+    data.map { y =>
+      val err = model.predict(y.features) - y.label
+      math.abs(err)
+    }.mean()
   }
 }

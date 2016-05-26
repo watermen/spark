@@ -17,26 +17,23 @@
 
 package org.apache.spark.deploy.master
 
-import java.nio.ByteBuffer
+import akka.serialization.Serialization
 
-import scala.collection.JavaConverters._
+import scala.collection.JavaConversions._
 import scala.reflect.ClassTag
 
 import org.apache.curator.framework.CuratorFramework
 import org.apache.zookeeper.CreateMode
 
-import org.apache.spark.SparkConf
-import org.apache.spark.deploy.SparkCuratorUtil
-import org.apache.spark.internal.Logging
-import org.apache.spark.serializer.Serializer
+import org.apache.spark.{Logging, SparkConf}
 
 
-private[master] class ZooKeeperPersistenceEngine(conf: SparkConf, val serializer: Serializer)
+private[spark] class ZooKeeperPersistenceEngine(conf: SparkConf, val serialization: Serialization)
   extends PersistenceEngine
-  with Logging {
-
-  private val WORKING_DIR = conf.get("spark.deploy.zookeeper.dir", "/spark") + "/master_status"
-  private val zk: CuratorFramework = SparkCuratorUtil.newClient(conf)
+  with Logging
+{
+  val WORKING_DIR = conf.get("spark.deploy.zookeeper.dir", "/spark") + "/master_status"
+  val zk: CuratorFramework = SparkCuratorUtil.newClient(conf)
 
   SparkCuratorUtil.mkdir(zk, WORKING_DIR)
 
@@ -49,9 +46,9 @@ private[master] class ZooKeeperPersistenceEngine(conf: SparkConf, val serializer
     zk.delete().forPath(WORKING_DIR + "/" + name)
   }
 
-  override def read[T: ClassTag](prefix: String): Seq[T] = {
-    zk.getChildren.forPath(WORKING_DIR).asScala
-      .filter(_.startsWith(prefix)).flatMap(deserializeFromFile[T])
+  override def read[T: ClassTag](prefix: String) = {
+    val file = zk.getChildren.forPath(WORKING_DIR).filter(_.startsWith(prefix))
+    file.map(deserializeFromFile[T]).flatten
   }
 
   override def close() {
@@ -59,21 +56,23 @@ private[master] class ZooKeeperPersistenceEngine(conf: SparkConf, val serializer
   }
 
   private def serializeIntoFile(path: String, value: AnyRef) {
-    val serialized = serializer.newInstance().serialize(value)
-    val bytes = new Array[Byte](serialized.remaining())
-    serialized.get(bytes)
-    zk.create().withMode(CreateMode.PERSISTENT).forPath(path, bytes)
+    val serializer = serialization.findSerializerFor(value)
+    val serialized = serializer.toBinary(value)
+    zk.create().withMode(CreateMode.PERSISTENT).forPath(path, serialized)
   }
 
-  private def deserializeFromFile[T](filename: String)(implicit m: ClassTag[T]): Option[T] = {
+  def deserializeFromFile[T](filename: String)(implicit m: ClassTag[T]): Option[T] = {
     val fileData = zk.getData().forPath(WORKING_DIR + "/" + filename)
+    val clazz = m.runtimeClass.asInstanceOf[Class[T]]
+    val serializer = serialization.serializerFor(clazz)
     try {
-      Some(serializer.newInstance().deserialize[T](ByteBuffer.wrap(fileData)))
+      Some(serializer.fromBinary(fileData).asInstanceOf[T])
     } catch {
-      case e: Exception =>
+      case e: Exception => {
         logWarning("Exception while reading persisted file, deleting", e)
         zk.delete().forPath(WORKING_DIR + "/" + filename)
         None
+      }
     }
   }
 }

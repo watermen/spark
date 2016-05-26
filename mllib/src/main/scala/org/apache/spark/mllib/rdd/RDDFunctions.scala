@@ -37,20 +37,39 @@ class RDDFunctions[T: ClassTag](self: RDD[T]) extends Serializable {
    * trigger a Spark job if the parent RDD has more than one partitions and the window size is
    * greater than 1.
    */
-  def sliding(windowSize: Int, step: Int): RDD[Array[T]] = {
+  def sliding(windowSize: Int): RDD[Array[T]] = {
     require(windowSize > 0, s"Sliding window size must be positive, but got $windowSize.")
-    if (windowSize == 1 && step == 1) {
+    if (windowSize == 1) {
       self.map(Array(_))
     } else {
-      new SlidingRDD[T](self, windowSize, step)
+      new SlidingRDD[T](self, windowSize)
     }
   }
 
   /**
-   * [[sliding(Int, Int)*]] with step = 1.
+   * Reduces the elements of this RDD in a multi-level tree pattern.
+   *
+   * @param depth suggested depth of the tree (default: 2)
+   * @see [[org.apache.spark.rdd.RDD#treeReduce]]
+   * @deprecated Use [[org.apache.spark.rdd.RDD#treeReduce]] instead.
    */
-  def sliding(windowSize: Int): RDD[Array[T]] = sliding(windowSize, 1)
+  @deprecated("Use RDD.treeReduce instead.", "1.3.0")
+  def treeReduce(f: (T, T) => T, depth: Int = 2): T = self.treeReduce(f, depth)
 
+  /**
+   * Aggregates the elements of this RDD in a multi-level tree pattern.
+   *
+   * @param depth suggested depth of the tree (default: 2)
+   * @see [[org.apache.spark.rdd.RDD#treeAggregate]]
+   * @deprecated Use [[org.apache.spark.rdd.RDD#treeAggregate]] instead.
+   */
+  @deprecated("Use RDD.treeAggregate instead.", "1.3.0")
+  def treeAggregate[U: ClassTag](zeroValue: U)(
+      seqOp: (U, T) => U,
+      combOp: (U, U) => U,
+      depth: Int = 2): U = {
+    self.treeAggregate(zeroValue)(seqOp, combOp, depth)
+  }
 }
 
 @DeveloperApi

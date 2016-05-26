@@ -17,17 +17,16 @@
 
 """
 The K-means algorithm written from scratch against PySpark. In practice,
-one may prefer to use the KMeans algorithm in ML, as shown in
-examples/src/main/python/ml/kmeans_example.py.
+one may prefer to use the KMeans algorithm in MLlib, as shown in
+examples/src/main/python/mllib/kmeans.py.
 
 This example requires NumPy (http://www.numpy.org/).
 """
-from __future__ import print_function
 
 import sys
 
 import numpy as np
-from pyspark.sql import SparkSession
+from pyspark import SparkContext
 
 
 def parseVector(line):
@@ -48,19 +47,15 @@ def closestPoint(p, centers):
 if __name__ == "__main__":
 
     if len(sys.argv) != 4:
-        print("Usage: kmeans <file> <k> <convergeDist>", file=sys.stderr)
+        print >> sys.stderr, "Usage: kmeans <file> <k> <convergeDist>"
         exit(-1)
 
-    print("""WARN: This is a naive implementation of KMeans Clustering and is given
-       as an example! Please refer to examples/src/main/python/ml/kmeans_example.py for an
-       example on how to use ML's KMeans implementation.""", file=sys.stderr)
+    print >> sys.stderr, """WARN: This is a naive implementation of KMeans Clustering and is given
+       as an example! Please refer to examples/src/main/python/mllib/kmeans.py for an example on
+       how to use MLlib's KMeans implementation."""
 
-    spark = SparkSession\
-        .builder\
-        .appName("PythonKMeans")\
-        .getOrCreate()
-
-    lines = spark.read.text(sys.argv[1]).rdd.map(lambda r: r[0])
+    sc = SparkContext(appName="PythonKMeans")
+    lines = sc.textFile(sys.argv[1])
     data = lines.map(parseVector).cache()
     K = int(sys.argv[2])
     convergeDist = float(sys.argv[3])
@@ -72,15 +67,15 @@ if __name__ == "__main__":
         closest = data.map(
             lambda p: (closestPoint(p, kPoints), (p, 1)))
         pointStats = closest.reduceByKey(
-            lambda p1_c1, p2_c2: (p1_c1[0] + p2_c2[0], p1_c1[1] + p2_c2[1]))
+            lambda (x1, y1), (x2, y2): (x1 + x2, y1 + y2))
         newPoints = pointStats.map(
-            lambda st: (st[0], st[1][0] / st[1][1])).collect()
+            lambda (x, (y, z)): (x, y / z)).collect()
 
-        tempDist = sum(np.sum((kPoints[iK] - p) ** 2) for (iK, p) in newPoints)
+        tempDist = sum(np.sum((kPoints[x] - y) ** 2) for (x, y) in newPoints)
 
-        for (iK, p) in newPoints:
-            kPoints[iK] = p
+        for (x, y) in newPoints:
+            kPoints[x] = y
 
-    print("Final centers: " + str(kPoints))
+    print "Final centers: " + str(kPoints)
 
-    spark.stop()
+    sc.stop()

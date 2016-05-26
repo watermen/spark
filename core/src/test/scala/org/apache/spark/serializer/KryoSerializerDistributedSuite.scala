@@ -17,24 +17,26 @@
 
 package org.apache.spark.serializer
 
-import com.esotericsoftware.kryo.Kryo
-
-import org.apache.spark._
-import org.apache.spark.serializer.KryoDistributedTest._
 import org.apache.spark.util.Utils
 
-class KryoSerializerDistributedSuite extends SparkFunSuite with LocalSparkContext {
+import com.esotericsoftware.kryo.Kryo
+import org.scalatest.FunSuite
+
+import org.apache.spark.{LocalSparkContext, SparkConf, SparkContext, SparkEnv, TestUtils}
+import org.apache.spark.serializer.KryoDistributedTest._
+
+class KryoSerializerDistributedSuite extends FunSuite {
 
   test("kryo objects are serialised consistently in different processes") {
     val conf = new SparkConf(false)
-      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-      .set("spark.kryo.registrator", classOf[AppJarRegistrator].getName)
-      .set("spark.task.maxFailures", "1")
+    conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+    conf.set("spark.kryo.registrator", classOf[AppJarRegistrator].getName)
+    conf.set("spark.task.maxFailures", "1")
 
     val jar = TestUtils.createJarWithClasses(List(AppJarRegistrator.customClassName))
     conf.setJars(List(jar.getPath))
 
-    sc = new SparkContext("local-cluster[2,1,1024]", "test", conf)
+    val sc = new SparkContext("local-cluster[2,1,512]", "test", conf)
     val original = Thread.currentThread.getContextClassLoader
     val loader = new java.net.URLClassLoader(Array(jar), Utils.getContextOrSparkClassLoader)
     SparkEnv.get.serializer.setDefaultClassLoader(loader)
@@ -47,6 +49,8 @@ class KryoSerializerDistributedSuite extends SparkFunSuite with LocalSparkContex
 
     // Join the two RDDs, and force evaluation
     assert(shuffledRDD.join(cachedRDD).collect().size == 1)
+
+    LocalSparkContext.stop(sc)
   }
 }
 
@@ -56,9 +60,7 @@ object KryoDistributedTest {
   class AppJarRegistrator extends KryoRegistrator {
     override def registerClasses(k: Kryo) {
       val classLoader = Thread.currentThread.getContextClassLoader
-      // scalastyle:off classforname
       k.register(Class.forName(AppJarRegistrator.customClassName, true, classLoader))
-      // scalastyle:on classforname
     }
   }
 

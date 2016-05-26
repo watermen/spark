@@ -19,30 +19,20 @@ from __future__ import absolute_import
 
 import random
 
-from pyspark import SparkContext, RDD, since
-from pyspark.mllib.common import callMLlibFunc, inherit_doc, JavaModelWrapper
+from pyspark import SparkContext, RDD
+from pyspark.mllib.common import callMLlibFunc, JavaModelWrapper
 from pyspark.mllib.linalg import _convert_to_vector
 from pyspark.mllib.regression import LabeledPoint
-from pyspark.mllib.util import JavaLoader, JavaSaveable
 
 __all__ = ['DecisionTreeModel', 'DecisionTree', 'RandomForestModel',
-           'RandomForest', 'GradientBoostedTreesModel', 'GradientBoostedTrees']
+           'RandomForest', 'GradientBoostedTrees']
 
 
-class TreeEnsembleModel(JavaModelWrapper, JavaSaveable):
-    """TreeEnsembleModel
-
-    .. versionadded:: 1.3.0
-    """
-    @since("1.3.0")
+class TreeEnsembleModel(JavaModelWrapper):
     def predict(self, x):
         """
         Predict values for a single data point or an RDD of points using
         the model trained.
-
-        Note: In Python, predict cannot currently be used within an RDD
-              transformation or action.
-              Call predict directly on the RDD instead.
         """
         if isinstance(x, RDD):
             return self.call("predict", x.map(_convert_to_vector))
@@ -50,14 +40,12 @@ class TreeEnsembleModel(JavaModelWrapper, JavaSaveable):
         else:
             return self.call("predict", _convert_to_vector(x))
 
-    @since("1.3.0")
     def numTrees(self):
         """
         Get number of trees in ensemble.
         """
         return self.call("numTrees")
 
-    @since("1.3.0")
     def totalNumNodes(self):
         """
         Get total number of nodes, summed over all trees in the ensemble.
@@ -68,32 +56,23 @@ class TreeEnsembleModel(JavaModelWrapper, JavaSaveable):
         """ Summary of model """
         return self._java_model.toString()
 
-    @since("1.3.0")
     def toDebugString(self):
         """ Full model """
         return self._java_model.toDebugString()
 
 
-class DecisionTreeModel(JavaModelWrapper, JavaSaveable, JavaLoader):
+class DecisionTreeModel(JavaModelWrapper):
     """
     .. note:: Experimental
 
     A decision tree model for classification or regression.
-
-    .. versionadded:: 1.1.0
     """
-    @since("1.1.0")
     def predict(self, x):
         """
         Predict the label of one or more examples.
 
-        Note: In Python, predict cannot currently be used within an RDD
-              transformation or action.
-              Call predict directly on the RDD instead.
-
-        :param x:
-          Data point (feature vector), or an RDD of data points (feature
-          vectors).
+        :param x:  Data point (feature vector),
+                   or an RDD of data points (feature vectors).
         """
         if isinstance(x, RDD):
             return self.call("predict", x.map(_convert_to_vector))
@@ -101,41 +80,26 @@ class DecisionTreeModel(JavaModelWrapper, JavaSaveable, JavaLoader):
         else:
             return self.call("predict", _convert_to_vector(x))
 
-    @since("1.1.0")
     def numNodes(self):
-        """Get number of nodes in tree, including leaf nodes."""
         return self._java_model.numNodes()
 
-    @since("1.1.0")
     def depth(self):
-        """
-        Get depth of tree (e.g. depth 0 means 1 leaf node, depth 1
-        means 1 internal node + 2 leaf nodes).
-        """
         return self._java_model.depth()
 
     def __repr__(self):
         """ summary of model. """
         return self._java_model.toString()
 
-    @since("1.2.0")
     def toDebugString(self):
         """ full model. """
         return self._java_model.toDebugString()
-
-    @classmethod
-    def _java_loader_class(cls):
-        return "org.apache.spark.mllib.tree.model.DecisionTreeModel"
 
 
 class DecisionTree(object):
     """
     .. note:: Experimental
 
-    Learning algorithm for a decision tree model for classification or
-    regression.
-
-    .. versionadded:: 1.1.0
+    Learning algorithm for a decision tree model for classification or regression.
     """
 
     @classmethod
@@ -148,42 +112,28 @@ class DecisionTree(object):
         return DecisionTreeModel(model)
 
     @classmethod
-    @since("1.1.0")
     def trainClassifier(cls, data, numClasses, categoricalFeaturesInfo,
                         impurity="gini", maxDepth=5, maxBins=32, minInstancesPerNode=1,
                         minInfoGain=0.0):
         """
-        Train a decision tree model for classification.
+        Train a DecisionTreeModel for classification.
 
-        :param data:
-          Training data: RDD of LabeledPoint. Labels should take values
-          {0, 1, ..., numClasses-1}.
-        :param numClasses:
-          Number of classes for classification.
-        :param categoricalFeaturesInfo:
-          Map storing arity of categorical features. An entry (n -> k)
-          indicates that feature n is categorical with k categories
-          indexed from 0: {0, 1, ..., k-1}.
-        :param impurity:
-          Criterion used for information gain calculation.
-          Supported values: "gini" or "entropy".
-          (default: "gini")
-        :param maxDepth:
-          Maximum depth of tree (e.g. depth 0 means 1 leaf node, depth 1
-          means 1 internal node + 2 leaf nodes).
-          (default: 5)
-        :param maxBins:
-          Number of bins used for finding splits at each node.
-          (default: 32)
-        :param minInstancesPerNode:
-          Minimum number of instances required at child nodes to create
-          the parent split.
-          (default: 1)
-        :param minInfoGain:
-          Minimum info gain required to create a split.
-          (default: 0.0)
-        :return:
-          DecisionTreeModel.
+        :param data: Training data: RDD of LabeledPoint.
+                     Labels are integers {0,1,...,numClasses}.
+        :param numClasses: Number of classes for classification.
+        :param categoricalFeaturesInfo: Map from categorical feature index
+                                        to number of categories.
+                                        Any feature not in this map
+                                        is treated as continuous.
+        :param impurity: Supported values: "entropy" or "gini"
+        :param maxDepth: Max depth of tree.
+                         E.g., depth 0 means 1 leaf node.
+                         Depth 1 means 1 internal node + 2 leaf nodes.
+        :param maxBins: Number of bins used for finding splits at each node.
+        :param minInstancesPerNode: Min number of instances required at child
+                                    nodes to create the parent split
+        :param minInfoGain: Min info gain required to create a split
+        :return: DecisionTreeModel
 
         Example usage:
 
@@ -198,16 +148,14 @@ class DecisionTree(object):
         ...     LabeledPoint(1.0, [3.0])
         ... ]
         >>> model = DecisionTree.trainClassifier(sc.parallelize(data), 2, {})
-        >>> print(model)
+        >>> print model,  # it already has newline
         DecisionTreeModel classifier of depth 1 with 3 nodes
-
-        >>> print(model.toDebugString())
+        >>> print model.toDebugString(),  # it already has newline
         DecisionTreeModel classifier of depth 1 with 3 nodes
           If (feature 0 <= 0.0)
            Predict: 0.0
           Else (feature 0 > 0.0)
            Predict: 1.0
-        <BLANKLINE>
         >>> model.predict(array([1.0]))
         1.0
         >>> model.predict(array([0.0]))
@@ -220,39 +168,27 @@ class DecisionTree(object):
                           impurity, maxDepth, maxBins, minInstancesPerNode, minInfoGain)
 
     @classmethod
-    @since("1.1.0")
     def trainRegressor(cls, data, categoricalFeaturesInfo,
                        impurity="variance", maxDepth=5, maxBins=32, minInstancesPerNode=1,
                        minInfoGain=0.0):
         """
-        Train a decision tree model for regression.
+        Train a DecisionTreeModel for regression.
 
-        :param data:
-          Training data: RDD of LabeledPoint. Labels are real numbers.
-        :param categoricalFeaturesInfo:
-          Map storing arity of categorical features. An entry (n -> k)
-          indicates that feature n is categorical with k categories
-          indexed from 0: {0, 1, ..., k-1}.
-        :param impurity:
-          Criterion used for information gain calculation.
-          The only supported value for regression is "variance".
-          (default: "variance")
-        :param maxDepth:
-          Maximum depth of tree (e.g. depth 0 means 1 leaf node, depth 1
-          means 1 internal node + 2 leaf nodes).
-          (default: 5)
-        :param maxBins:
-          Number of bins used for finding splits at each node.
-          (default: 32)
-        :param minInstancesPerNode:
-          Minimum number of instances required at child nodes to create
-          the parent split.
-          (default: 1)
-        :param minInfoGain:
-          Minimum info gain required to create a split.
-          (default: 0.0)
-        :return:
-          DecisionTreeModel.
+        :param data: Training data: RDD of LabeledPoint.
+                     Labels are real numbers.
+        :param categoricalFeaturesInfo: Map from categorical feature index
+                                        to number of categories.
+                                        Any feature not in this map
+                                        is treated as continuous.
+        :param impurity: Supported values: "variance"
+        :param maxDepth: Max depth of tree.
+                         E.g., depth 0 means 1 leaf node.
+                         Depth 1 means 1 internal node + 2 leaf nodes.
+        :param maxBins: Number of bins used for finding splits at each node.
+        :param minInstancesPerNode: Min number of instances required at child
+                                    nodes to create the parent split
+        :param minInfoGain: Min info gain required to create a split
+        :return: DecisionTreeModel
 
         Example usage:
 
@@ -280,29 +216,19 @@ class DecisionTree(object):
                           impurity, maxDepth, maxBins, minInstancesPerNode, minInfoGain)
 
 
-@inherit_doc
-class RandomForestModel(TreeEnsembleModel, JavaLoader):
+class RandomForestModel(TreeEnsembleModel):
     """
     .. note:: Experimental
 
     Represents a random forest model.
-
-    .. versionadded:: 1.2.0
     """
-
-    @classmethod
-    def _java_loader_class(cls):
-        return "org.apache.spark.mllib.tree.model.RandomForestModel"
 
 
 class RandomForest(object):
     """
     .. note:: Experimental
 
-    Learning algorithm for a random forest model for classification or
-    regression.
-
-    .. versionadded:: 1.2.0
+    Learning algorithm for a random forest model for classification or regression.
     """
 
     supportedFeatureSubsetStrategies = ("auto", "all", "sqrt", "log2", "onethird")
@@ -322,49 +248,34 @@ class RandomForest(object):
         return RandomForestModel(model)
 
     @classmethod
-    @since("1.2.0")
     def trainClassifier(cls, data, numClasses, categoricalFeaturesInfo, numTrees,
                         featureSubsetStrategy="auto", impurity="gini", maxDepth=4, maxBins=32,
                         seed=None):
         """
-        Train a random forest model for binary or multiclass
+        Method to train a decision tree model for binary or multiclass
         classification.
 
-        :param data:
-          Training dataset: RDD of LabeledPoint. Labels should take values
-          {0, 1, ..., numClasses-1}.
-        :param numClasses:
-          Number of classes for classification.
-        :param categoricalFeaturesInfo:
-          Map storing arity of categorical features. An entry (n -> k)
-          indicates that feature n is categorical with k categories
-          indexed from 0: {0, 1, ..., k-1}.
-        :param numTrees:
-          Number of trees in the random forest.
-        :param featureSubsetStrategy:
-          Number of features to consider for splits at each node.
-          Supported values: "auto", "all", "sqrt", "log2", "onethird".
-          If "auto" is set, this parameter is set based on numTrees:
-          if numTrees == 1, set to "all";
-          if numTrees > 1 (forest) set to "sqrt".
-          (default: "auto")
-        :param impurity:
-          Criterion used for information gain calculation.
-          Supported values: "gini" or "entropy".
-          (default: "gini")
-        :param maxDepth:
-          Maximum depth of tree (e.g. depth 0 means 1 leaf node, depth 1
-          means 1 internal node + 2 leaf nodes).
-          (default: 4)
-        :param maxBins:
-          Maximum number of bins used for splitting features.
-          (default: 32)
-        :param seed:
-          Random seed for bootstrapping and choosing feature subsets.
-          Set as None to generate seed based on system time.
-          (default: None)
-        :return:
-          RandomForestModel that can be used for prediction.
+        :param data: Training dataset: RDD of LabeledPoint. Labels should take
+               values {0, 1, ..., numClasses-1}.
+        :param numClasses: number of classes for classification.
+        :param categoricalFeaturesInfo: Map storing arity of categorical features.
+               E.g., an entry (n -> k) indicates that feature n is categorical
+               with k categories indexed from 0: {0, 1, ..., k-1}.
+        :param numTrees: Number of trees in the random forest.
+        :param featureSubsetStrategy: Number of features to consider for splits at
+               each node.
+               Supported: "auto" (default), "all", "sqrt", "log2", "onethird".
+               If "auto" is set, this parameter is set based on numTrees:
+               if numTrees == 1, set to "all";
+               if numTrees > 1 (forest) set to "sqrt".
+        :param impurity: Criterion used for information gain calculation.
+               Supported values: "gini" (recommended) or "entropy".
+        :param maxDepth: Maximum depth of the tree. E.g., depth 0 means 1 leaf node;
+               depth 1 means 1 internal node + 2 leaf nodes. (default: 4)
+        :param maxBins: maximum number of bins used for splitting features
+               (default: 100)
+        :param seed: Random seed for bootstrapping and choosing feature subsets.
+        :return: RandomForestModel that can be used for prediction
 
         Example usage:
 
@@ -382,10 +293,9 @@ class RandomForest(object):
         3
         >>> model.totalNumNodes()
         7
-        >>> print(model)
+        >>> print model,
         TreeEnsembleModel classifier with 3 trees
-        <BLANKLINE>
-        >>> print(model.toDebugString())
+        >>> print model.toDebugString(),
         TreeEnsembleModel classifier with 3 trees
         <BLANKLINE>
           Tree 0:
@@ -400,7 +310,6 @@ class RandomForest(object):
              Predict: 0.0
             Else (feature 0 > 1.0)
              Predict: 1.0
-        <BLANKLINE>
         >>> model.predict([2.0])
         1.0
         >>> model.predict([0.0])
@@ -414,44 +323,33 @@ class RandomForest(object):
                           maxDepth, maxBins, seed)
 
     @classmethod
-    @since("1.2.0")
     def trainRegressor(cls, data, categoricalFeaturesInfo, numTrees, featureSubsetStrategy="auto",
                        impurity="variance", maxDepth=4, maxBins=32, seed=None):
         """
-        Train a random forest model for regression.
+        Method to train a decision tree model for regression.
 
-        :param data:
-          Training dataset: RDD of LabeledPoint. Labels are real numbers.
-        :param categoricalFeaturesInfo:
-          Map storing arity of categorical features. An entry (n -> k)
-          indicates that feature n is categorical with k categories
-          indexed from 0: {0, 1, ..., k-1}.
-        :param numTrees:
-          Number of trees in the random forest.
-        :param featureSubsetStrategy:
-          Number of features to consider for splits at each node.
-          Supported values: "auto", "all", "sqrt", "log2", "onethird".
-          If "auto" is set, this parameter is set based on numTrees:
-          if numTrees == 1, set to "all";
-          if numTrees > 1 (forest) set to "onethird" for regression.
-          (default: "auto")
-        :param impurity:
-          Criterion used for information gain calculation.
-          The only supported value for regression is "variance".
-          (default: "variance")
-        :param maxDepth:
-          Maximum depth of tree (e.g. depth 0 means 1 leaf node, depth 1
-          means 1 internal node + 2 leaf nodes).
-          (default: 4)
-        :param maxBins:
-          Maximum number of bins used for splitting features.
-          (default: 32)
-        :param seed:
-          Random seed for bootstrapping and choosing feature subsets.
-          Set as None to generate seed based on system time.
-          (default: None)
-        :return:
-          RandomForestModel that can be used for prediction.
+        :param data: Training dataset: RDD of LabeledPoint. Labels are
+               real numbers.
+        :param categoricalFeaturesInfo: Map storing arity of categorical
+               features. E.g., an entry (n -> k) indicates that feature
+               n is categorical with k categories indexed from 0:
+               {0, 1, ..., k-1}.
+        :param numTrees: Number of trees in the random forest.
+        :param featureSubsetStrategy: Number of features to consider for
+               splits at each node.
+               Supported: "auto" (default), "all", "sqrt", "log2", "onethird".
+               If "auto" is set, this parameter is set based on numTrees:
+               if numTrees == 1, set to "all";
+               if numTrees > 1 (forest) set to "onethird" for regression.
+        :param impurity: Criterion used for information gain calculation.
+               Supported values: "variance".
+        :param maxDepth: Maximum depth of the tree. E.g., depth 0 means 1
+               leaf node; depth 1 means 1 internal node + 2 leaf nodes.
+               (default: 4)
+        :param maxBins: maximum number of bins used for splitting features
+               (default: 100)
+        :param seed: Random seed for bootstrapping and choosing feature subsets.
+        :return: RandomForestModel that can be used for prediction
 
         Example usage:
 
@@ -483,77 +381,52 @@ class RandomForest(object):
                           featureSubsetStrategy, impurity, maxDepth, maxBins, seed)
 
 
-@inherit_doc
-class GradientBoostedTreesModel(TreeEnsembleModel, JavaLoader):
+class GradientBoostedTreesModel(TreeEnsembleModel):
     """
     .. note:: Experimental
 
     Represents a gradient-boosted tree model.
-
-    .. versionadded:: 1.3.0
     """
-
-    @classmethod
-    def _java_loader_class(cls):
-        return "org.apache.spark.mllib.tree.model.GradientBoostedTreesModel"
 
 
 class GradientBoostedTrees(object):
     """
     .. note:: Experimental
 
-    Learning algorithm for a gradient boosted trees model for
-    classification or regression.
-
-    .. versionadded:: 1.3.0
+    Learning algorithm for a gradient boosted trees model for classification or regression.
     """
 
     @classmethod
     def _train(cls, data, algo, categoricalFeaturesInfo,
-               loss, numIterations, learningRate, maxDepth, maxBins):
+               loss, numIterations, learningRate, maxDepth):
         first = data.first()
         assert isinstance(first, LabeledPoint), "the data should be RDD of LabeledPoint"
         model = callMLlibFunc("trainGradientBoostedTreesModel", data, algo, categoricalFeaturesInfo,
-                              loss, numIterations, learningRate, maxDepth, maxBins)
+                              loss, numIterations, learningRate, maxDepth)
         return GradientBoostedTreesModel(model)
 
     @classmethod
-    @since("1.3.0")
     def trainClassifier(cls, data, categoricalFeaturesInfo,
-                        loss="logLoss", numIterations=100, learningRate=0.1, maxDepth=3,
-                        maxBins=32):
+                        loss="logLoss", numIterations=100, learningRate=0.1, maxDepth=3):
         """
-        Train a gradient-boosted trees model for classification.
+        Method to train a gradient-boosted trees model for classification.
 
-        :param data:
-          Training dataset: RDD of LabeledPoint. Labels should take values
-          {0, 1}.
-        :param categoricalFeaturesInfo:
-          Map storing arity of categorical features. An entry (n -> k)
-          indicates that feature n is categorical with k categories
-          indexed from 0: {0, 1, ..., k-1}.
-        :param loss:
-          Loss function used for minimization during gradient boosting.
-          Supported values: "logLoss", "leastSquaresError",
-          "leastAbsoluteError".
-          (default: "logLoss")
-        :param numIterations:
-          Number of iterations of boosting.
-          (default: 100)
-        :param learningRate:
-          Learning rate for shrinking the contribution of each estimator.
-          The learning rate should be between in the interval (0, 1].
-          (default: 0.1)
-        :param maxDepth:
-          Maximum depth of tree (e.g. depth 0 means 1 leaf node, depth 1
-          means 1 internal node + 2 leaf nodes).
-          (default: 3)
-        :param maxBins:
-          Maximum number of bins used for splitting features. DecisionTree
-          requires maxBins >= max categories.
-          (default: 32)
-        :return:
-          GradientBoostedTreesModel that can be used for prediction.
+        :param data: Training dataset: RDD of LabeledPoint. Labels should take values {0, 1}.
+        :param categoricalFeaturesInfo: Map storing arity of categorical
+               features. E.g., an entry (n -> k) indicates that feature
+               n is categorical with k categories indexed from 0:
+               {0, 1, ..., k-1}.
+        :param loss: Loss function used for minimization during gradient boosting.
+                     Supported: {"logLoss" (default), "leastSquaresError", "leastAbsoluteError"}.
+        :param numIterations: Number of iterations of boosting.
+                              (default: 100)
+        :param learningRate: Learning rate for shrinking the contribution of each estimator.
+                             The learning rate should be between in the interval (0, 1]
+                             (default: 0.1)
+        :param maxDepth: Maximum depth of the tree. E.g., depth 0 means 1
+               leaf node; depth 1 means 1 internal node + 2 leaf nodes.
+               (default: 3)
+        :return: GradientBoostedTreesModel that can be used for prediction
 
         Example usage:
 
@@ -567,14 +440,13 @@ class GradientBoostedTrees(object):
         ...     LabeledPoint(1.0, [3.0])
         ... ]
         >>>
-        >>> model = GradientBoostedTrees.trainClassifier(sc.parallelize(data), {}, numIterations=10)
+        >>> model = GradientBoostedTrees.trainClassifier(sc.parallelize(data), {})
         >>> model.numTrees()
-        10
+        100
         >>> model.totalNumNodes()
-        30
-        >>> print(model)  # it already has newline
-        TreeEnsembleModel classifier with 10 trees
-        <BLANKLINE>
+        300
+        >>> print model,  # it already has newline
+        TreeEnsembleModel classifier with 100 trees
         >>> model.predict([2.0])
         1.0
         >>> model.predict([0.0])
@@ -584,44 +456,31 @@ class GradientBoostedTrees(object):
         [1.0, 0.0]
         """
         return cls._train(data, "classification", categoricalFeaturesInfo,
-                          loss, numIterations, learningRate, maxDepth, maxBins)
+                          loss, numIterations, learningRate, maxDepth)
 
     @classmethod
-    @since("1.3.0")
     def trainRegressor(cls, data, categoricalFeaturesInfo,
-                       loss="leastSquaresError", numIterations=100, learningRate=0.1, maxDepth=3,
-                       maxBins=32):
+                       loss="leastSquaresError", numIterations=100, learningRate=0.1, maxDepth=3):
         """
-        Train a gradient-boosted trees model for regression.
+        Method to train a gradient-boosted trees model for regression.
 
-        :param data:
-          Training dataset: RDD of LabeledPoint. Labels are real numbers.
-        :param categoricalFeaturesInfo:
-          Map storing arity of categorical features. An entry (n -> k)
-          indicates that feature n is categorical with k categories
-          indexed from 0: {0, 1, ..., k-1}.
-        :param loss:
-          Loss function used for minimization during gradient boosting.
-          Supported values: "logLoss", "leastSquaresError",
-          "leastAbsoluteError".
-          (default: "leastSquaresError")
-        :param numIterations:
-          Number of iterations of boosting.
-          (default: 100)
-        :param learningRate:
-          Learning rate for shrinking the contribution of each estimator.
-          The learning rate should be between in the interval (0, 1].
-          (default: 0.1)
-        :param maxDepth:
-          Maximum depth of tree (e.g. depth 0 means 1 leaf node, depth 1
-          means 1 internal node + 2 leaf nodes).
-          (default: 3)
-        :param maxBins:
-          Maximum number of bins used for splitting features. DecisionTree
-          requires maxBins >= max categories.
-          (default: 32)
-        :return:
-          GradientBoostedTreesModel that can be used for prediction.
+        :param data: Training dataset: RDD of LabeledPoint. Labels are
+               real numbers.
+        :param categoricalFeaturesInfo: Map storing arity of categorical
+               features. E.g., an entry (n -> k) indicates that feature
+               n is categorical with k categories indexed from 0:
+               {0, 1, ..., k-1}.
+        :param loss: Loss function used for minimization during gradient boosting.
+                     Supported: {"logLoss" (default), "leastSquaresError", "leastAbsoluteError"}.
+        :param numIterations: Number of iterations of boosting.
+                              (default: 100)
+        :param learningRate: Learning rate for shrinking the contribution of each estimator.
+                             The learning rate should be between in the interval (0, 1]
+                             (default: 0.1)
+        :param maxDepth: Maximum depth of the tree. E.g., depth 0 means 1
+               leaf node; depth 1 means 1 internal node + 2 leaf nodes.
+               (default: 3)
+        :return: GradientBoostedTreesModel that can be used for prediction
 
         Example usage:
 
@@ -636,12 +495,11 @@ class GradientBoostedTrees(object):
         ...     LabeledPoint(1.0, SparseVector(2, {1: 2.0}))
         ... ]
         >>>
-        >>> data = sc.parallelize(sparse_data)
-        >>> model = GradientBoostedTrees.trainRegressor(data, {}, numIterations=10)
+        >>> model = GradientBoostedTrees.trainRegressor(sc.parallelize(sparse_data), {})
         >>> model.numTrees()
-        10
+        100
         >>> model.totalNumNodes()
-        12
+        102
         >>> model.predict(SparseVector(2, {1: 1.0}))
         1.0
         >>> model.predict(SparseVector(2, {0: 1.0}))
@@ -651,20 +509,15 @@ class GradientBoostedTrees(object):
         [1.0, 0.0]
         """
         return cls._train(data, "regression", categoricalFeaturesInfo,
-                          loss, numIterations, learningRate, maxDepth, maxBins)
+                          loss, numIterations, learningRate, maxDepth)
 
 
 def _test():
     import doctest
     globs = globals().copy()
-    from pyspark.sql import SparkSession
-    spark = SparkSession.builder\
-        .master("local[4]")\
-        .appName("mllib.tree tests")\
-        .getOrCreate()
-    globs['sc'] = spark.sparkContext
+    globs['sc'] = SparkContext('local[4]', 'PythonTest', batchSize=2)
     (failure_count, test_count) = doctest.testmod(globs=globs, optionflags=doctest.ELLIPSIS)
-    spark.stop()
+    globs['sc'].stop()
     if failure_count:
         exit(-1)
 

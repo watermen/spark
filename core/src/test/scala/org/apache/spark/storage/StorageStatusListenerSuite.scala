@@ -17,23 +17,22 @@
 
 package org.apache.spark.storage
 
-import org.apache.spark.{SparkConf, SparkFunSuite, Success}
+import org.scalatest.FunSuite
+import org.apache.spark.Success
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.scheduler._
 
 /**
  * Test the behavior of StorageStatusListener in response to all relevant events.
  */
-class StorageStatusListenerSuite extends SparkFunSuite {
+class StorageStatusListenerSuite extends FunSuite {
   private val bm1 = BlockManagerId("big", "dog", 1)
   private val bm2 = BlockManagerId("fat", "duck", 2)
   private val taskInfo1 = new TaskInfo(0, 0, 0, 0, "big", "dog", TaskLocality.ANY, false)
   private val taskInfo2 = new TaskInfo(0, 0, 0, 0, "fat", "duck", TaskLocality.ANY, false)
-  private val conf = new SparkConf()
 
   test("block manager added/removed") {
-    conf.set("spark.ui.retainedDeadExecutors", "1")
-    val listener = new StorageStatusListener(conf)
+    val listener = new StorageStatusListener
 
     // Block manager add
     assert(listener.executorIdToStorageStatus.size === 0)
@@ -55,18 +54,14 @@ class StorageStatusListenerSuite extends SparkFunSuite {
     assert(listener.executorIdToStorageStatus.size === 1)
     assert(!listener.executorIdToStorageStatus.get("big").isDefined)
     assert(listener.executorIdToStorageStatus.get("fat").isDefined)
-    assert(listener.deadExecutorStorageStatus.size === 1)
-    assert(listener.deadExecutorStorageStatus(0).blockManagerId.executorId.equals("big"))
     listener.onBlockManagerRemoved(SparkListenerBlockManagerRemoved(1L, bm2))
     assert(listener.executorIdToStorageStatus.size === 0)
     assert(!listener.executorIdToStorageStatus.get("big").isDefined)
     assert(!listener.executorIdToStorageStatus.get("fat").isDefined)
-    assert(listener.deadExecutorStorageStatus.size === 1)
-    assert(listener.deadExecutorStorageStatus(0).blockManagerId.executorId.equals("fat"))
   }
 
   test("task end without updated blocks") {
-    val listener = new StorageStatusListener(conf)
+    val listener = new StorageStatusListener
     listener.onBlockManagerAdded(SparkListenerBlockManagerAdded(1L, bm1, 1000L))
     listener.onBlockManagerAdded(SparkListenerBlockManagerAdded(1L, bm2, 2000L))
     val taskMetrics = new TaskMetrics
@@ -82,51 +77,48 @@ class StorageStatusListenerSuite extends SparkFunSuite {
     assert(listener.executorIdToStorageStatus("fat").numBlocks === 0)
   }
 
-  test("updated blocks") {
-    val listener = new StorageStatusListener(conf)
+  test("task end with updated blocks") {
+    val listener = new StorageStatusListener
     listener.onBlockManagerAdded(SparkListenerBlockManagerAdded(1L, bm1, 1000L))
     listener.onBlockManagerAdded(SparkListenerBlockManagerAdded(1L, bm2, 2000L))
+    val taskMetrics1 = new TaskMetrics
+    val taskMetrics2 = new TaskMetrics
+    val block1 = (RDDBlockId(1, 1), BlockStatus(StorageLevel.DISK_ONLY, 0L, 100L, 0L))
+    val block2 = (RDDBlockId(1, 2), BlockStatus(StorageLevel.DISK_ONLY, 0L, 200L, 0L))
+    val block3 = (RDDBlockId(4, 0), BlockStatus(StorageLevel.DISK_ONLY, 0L, 300L, 0L))
+    taskMetrics1.updatedBlocks = Some(Seq(block1, block2))
+    taskMetrics2.updatedBlocks = Some(Seq(block3))
 
-    val blockUpdateInfos1 = Seq(
-      BlockUpdatedInfo(bm1, RDDBlockId(1, 1), StorageLevel.DISK_ONLY, 0L, 100L),
-      BlockUpdatedInfo(bm1, RDDBlockId(1, 2), StorageLevel.DISK_ONLY, 0L, 200L)
-    )
-    val blockUpdateInfos2 =
-      Seq(BlockUpdatedInfo(bm2, RDDBlockId(4, 0), StorageLevel.DISK_ONLY, 0L, 300L))
-
-    // Add some new blocks
+    // Task end with new blocks
     assert(listener.executorIdToStorageStatus("big").numBlocks === 0)
     assert(listener.executorIdToStorageStatus("fat").numBlocks === 0)
-    postUpdateBlock(listener, blockUpdateInfos1)
+    listener.onTaskEnd(SparkListenerTaskEnd(1, 0, "obliteration", Success, taskInfo1, taskMetrics1))
     assert(listener.executorIdToStorageStatus("big").numBlocks === 2)
     assert(listener.executorIdToStorageStatus("fat").numBlocks === 0)
     assert(listener.executorIdToStorageStatus("big").containsBlock(RDDBlockId(1, 1)))
     assert(listener.executorIdToStorageStatus("big").containsBlock(RDDBlockId(1, 2)))
     assert(listener.executorIdToStorageStatus("fat").numBlocks === 0)
-    postUpdateBlock(listener, blockUpdateInfos2)
+    listener.onTaskEnd(SparkListenerTaskEnd(1, 0, "obliteration", Success, taskInfo2, taskMetrics2))
     assert(listener.executorIdToStorageStatus("big").numBlocks === 2)
     assert(listener.executorIdToStorageStatus("fat").numBlocks === 1)
     assert(listener.executorIdToStorageStatus("big").containsBlock(RDDBlockId(1, 1)))
     assert(listener.executorIdToStorageStatus("big").containsBlock(RDDBlockId(1, 2)))
     assert(listener.executorIdToStorageStatus("fat").containsBlock(RDDBlockId(4, 0)))
 
-    // Dropped the blocks
-    val droppedBlockInfo1 = Seq(
-      BlockUpdatedInfo(bm1, RDDBlockId(1, 1), StorageLevel.NONE, 0L, 0L),
-      BlockUpdatedInfo(bm1, RDDBlockId(4, 0), StorageLevel.NONE, 0L, 0L)
-    )
-    val droppedBlockInfo2 = Seq(
-      BlockUpdatedInfo(bm2, RDDBlockId(1, 2), StorageLevel.NONE, 0L, 0L),
-      BlockUpdatedInfo(bm2, RDDBlockId(4, 0), StorageLevel.NONE, 0L, 0L)
-    )
+    // Task end with dropped blocks
+    val droppedBlock1 = (RDDBlockId(1, 1), BlockStatus(StorageLevel.NONE, 0L, 0L, 0L))
+    val droppedBlock2 = (RDDBlockId(1, 2), BlockStatus(StorageLevel.NONE, 0L, 0L, 0L))
+    val droppedBlock3 = (RDDBlockId(4, 0), BlockStatus(StorageLevel.NONE, 0L, 0L, 0L))
+    taskMetrics1.updatedBlocks = Some(Seq(droppedBlock1, droppedBlock3))
+    taskMetrics2.updatedBlocks = Some(Seq(droppedBlock2, droppedBlock3))
 
-    postUpdateBlock(listener, droppedBlockInfo1)
+    listener.onTaskEnd(SparkListenerTaskEnd(1, 0, "obliteration", Success, taskInfo1, taskMetrics1))
     assert(listener.executorIdToStorageStatus("big").numBlocks === 1)
     assert(listener.executorIdToStorageStatus("fat").numBlocks === 1)
     assert(!listener.executorIdToStorageStatus("big").containsBlock(RDDBlockId(1, 1)))
     assert(listener.executorIdToStorageStatus("big").containsBlock(RDDBlockId(1, 2)))
     assert(listener.executorIdToStorageStatus("fat").containsBlock(RDDBlockId(4, 0)))
-    postUpdateBlock(listener, droppedBlockInfo2)
+    listener.onTaskEnd(SparkListenerTaskEnd(1, 0, "obliteration", Success, taskInfo2, taskMetrics2))
     assert(listener.executorIdToStorageStatus("big").numBlocks === 1)
     assert(listener.executorIdToStorageStatus("fat").numBlocks === 0)
     assert(!listener.executorIdToStorageStatus("big").containsBlock(RDDBlockId(1, 1)))
@@ -135,16 +127,17 @@ class StorageStatusListenerSuite extends SparkFunSuite {
   }
 
   test("unpersist RDD") {
-    val listener = new StorageStatusListener(conf)
+    val listener = new StorageStatusListener
     listener.onBlockManagerAdded(SparkListenerBlockManagerAdded(1L, bm1, 1000L))
-    val blockUpdateInfos1 = Seq(
-      BlockUpdatedInfo(bm1, RDDBlockId(1, 1), StorageLevel.DISK_ONLY, 0L, 100L),
-      BlockUpdatedInfo(bm1, RDDBlockId(1, 2), StorageLevel.DISK_ONLY, 0L, 200L)
-    )
-    val blockUpdateInfos2 =
-      Seq(BlockUpdatedInfo(bm1, RDDBlockId(4, 0), StorageLevel.DISK_ONLY, 0L, 300L))
-    postUpdateBlock(listener, blockUpdateInfos1)
-    postUpdateBlock(listener, blockUpdateInfos2)
+    val taskMetrics1 = new TaskMetrics
+    val taskMetrics2 = new TaskMetrics
+    val block1 = (RDDBlockId(1, 1), BlockStatus(StorageLevel.DISK_ONLY, 0L, 100L, 0L))
+    val block2 = (RDDBlockId(1, 2), BlockStatus(StorageLevel.DISK_ONLY, 0L, 200L, 0L))
+    val block3 = (RDDBlockId(4, 0), BlockStatus(StorageLevel.DISK_ONLY, 0L, 300L, 0L))
+    taskMetrics1.updatedBlocks = Some(Seq(block1, block2))
+    taskMetrics2.updatedBlocks = Some(Seq(block3))
+    listener.onTaskEnd(SparkListenerTaskEnd(1, 0, "obliteration", Success, taskInfo1, taskMetrics1))
+    listener.onTaskEnd(SparkListenerTaskEnd(1, 0, "obliteration", Success, taskInfo1, taskMetrics2))
     assert(listener.executorIdToStorageStatus("big").numBlocks === 3)
 
     // Unpersist RDD
@@ -156,12 +149,5 @@ class StorageStatusListenerSuite extends SparkFunSuite {
     assert(listener.executorIdToStorageStatus("big").containsBlock(RDDBlockId(1, 2)))
     listener.onUnpersistRDD(SparkListenerUnpersistRDD(1))
     assert(listener.executorIdToStorageStatus("big").numBlocks === 0)
-  }
-
-  private def postUpdateBlock(
-      listener: StorageStatusListener, updateBlockInfos: Seq[BlockUpdatedInfo]): Unit = {
-    updateBlockInfos.foreach { updateBlockInfo =>
-      listener.onBlockUpdated(SparkListenerBlockUpdated(updateBlockInfo))
-    }
   }
 }

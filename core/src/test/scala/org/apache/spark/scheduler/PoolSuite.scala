@@ -19,13 +19,15 @@ package org.apache.spark.scheduler
 
 import java.util.Properties
 
-import org.apache.spark.{LocalSparkContext, SparkConf, SparkContext, SparkFunSuite}
+import org.scalatest.FunSuite
+
+import org.apache.spark.{LocalSparkContext, SparkConf, SparkContext}
 
 /**
  * Tests that pools and the associated scheduling algorithms for FIFO and fair scheduling work
  * correctly.
  */
-class PoolSuite extends SparkFunSuite with LocalSparkContext {
+class PoolSuite extends FunSuite with LocalSparkContext {
 
   def createTaskSetManager(stageId: Int, numTasks: Int, taskScheduler: TaskSchedulerImpl)
     : TaskSetManager = {
@@ -95,9 +97,9 @@ class PoolSuite extends SparkFunSuite with LocalSparkContext {
     assert(rootPool.getSchedulableByName("3").weight === 1)
 
     val properties1 = new Properties()
-    properties1.setProperty("spark.scheduler.pool", "1")
+    properties1.setProperty("spark.scheduler.pool","1")
     val properties2 = new Properties()
-    properties2.setProperty("spark.scheduler.pool", "2")
+    properties2.setProperty("spark.scheduler.pool","2")
 
     val taskSetManager10 = createTaskSetManager(0, 1, taskScheduler)
     val taskSetManager11 = createTaskSetManager(1, 1, taskScheduler)

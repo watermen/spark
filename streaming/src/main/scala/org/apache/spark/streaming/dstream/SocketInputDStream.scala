@@ -17,27 +17,25 @@
 
 package org.apache.spark.streaming.dstream
 
-import java.io._
-import java.net.{ConnectException, Socket}
-import java.nio.charset.StandardCharsets
+import org.apache.spark.streaming.StreamingContext
+import org.apache.spark.storage.StorageLevel
+import org.apache.spark.util.NextIterator
 
 import scala.reflect.ClassTag
-import scala.util.control.NonFatal
 
-import org.apache.spark.internal.Logging
-import org.apache.spark.storage.StorageLevel
-import org.apache.spark.streaming.StreamingContext
+import java.io._
+import java.net.{UnknownHostException, Socket}
+import org.apache.spark.Logging
 import org.apache.spark.streaming.receiver.Receiver
-import org.apache.spark.util.NextIterator
 
 private[streaming]
 class SocketInputDStream[T: ClassTag](
-    _ssc: StreamingContext,
+    @transient ssc_ : StreamingContext,
     host: String,
     port: Int,
     bytesToObjects: InputStream => Iterator[T],
     storageLevel: StorageLevel
-  ) extends ReceiverInputDStream[T](_ssc) {
+  ) extends ReceiverInputDStream[T](ssc_) {
 
   def getReceiver(): Receiver[T] = {
     new SocketReceiver(host, port, bytesToObjects, storageLevel)
@@ -52,20 +50,7 @@ class SocketReceiver[T: ClassTag](
     storageLevel: StorageLevel
   ) extends Receiver[T](storageLevel) with Logging {
 
-  private var socket: Socket = _
-
   def onStart() {
-
-    logInfo(s"Connecting to $host:$port")
-    try {
-      socket = new Socket(host, port)
-    } catch {
-      case e: ConnectException =>
-        restart(s"Error connecting to $host:$port", e)
-        return
-    }
-    logInfo(s"Connected to $host:$port")
-
     // Start the thread that receives data over a connection
     new Thread("Socket Receiver") {
       setDaemon(true)
@@ -74,34 +59,33 @@ class SocketReceiver[T: ClassTag](
   }
 
   def onStop() {
-    // in case restart thread close it twice
-    synchronized {
-      if (socket != null) {
-        socket.close()
-        socket = null
-        logInfo(s"Closed socket to $host:$port")
-      }
-    }
+    // There is nothing much to do as the thread calling receive()
+    // is designed to stop by itself isStopped() returns false
   }
 
   /** Create a socket connection and receive data until receiver is stopped */
   def receive() {
+    var socket: Socket = null
     try {
+      logInfo("Connecting to " + host + ":" + port)
+      socket = new Socket(host, port)
+      logInfo("Connected to " + host + ":" + port)
       val iterator = bytesToObjects(socket.getInputStream())
       while(!isStopped && iterator.hasNext) {
-        store(iterator.next())
+        store(iterator.next)
       }
-      if (!isStopped()) {
-        restart("Socket data stream had no more data")
-      } else {
-        logInfo("Stopped receiving")
-      }
+      logInfo("Stopped receiving")
+      restart("Retrying connecting to " + host + ":" + port)
     } catch {
-      case NonFatal(e) =>
-        logWarning("Error receiving data", e)
-        restart("Error receiving data", e)
+      case e: java.net.ConnectException =>
+        restart("Error connecting to " + host + ":" + port, e)
+      case t: Throwable =>
+        restart("Error receiving data", t)
     } finally {
-      onStop()
+      if (socket != null) {
+        socket.close()
+        logInfo("Closed socket to " + host + ":" + port)
+      }
     }
   }
 }
@@ -114,8 +98,7 @@ object SocketReceiver  {
    * to '\n' delimited strings and returns an iterator to access the strings.
    */
   def bytesToLines(inputStream: InputStream): Iterator[String] = {
-    val dataInputStream = new BufferedReader(
-      new InputStreamReader(inputStream, StandardCharsets.UTF_8))
+    val dataInputStream = new BufferedReader(new InputStreamReader(inputStream, "UTF-8"))
     new NextIterator[String] {
       protected override def getNext() = {
         val nextValue = dataInputStream.readLine()
