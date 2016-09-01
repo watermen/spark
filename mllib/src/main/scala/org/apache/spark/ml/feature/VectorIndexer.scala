@@ -24,7 +24,7 @@ import scala.collection.JavaConverters._
 
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.annotation.Since
+import org.apache.spark.annotation.{Experimental, Since}
 import org.apache.spark.ml.{Estimator, Model}
 import org.apache.spark.ml.attribute._
 import org.apache.spark.ml.linalg.{DenseVector, SparseVector, Vector, VectorUDT}
@@ -59,6 +59,7 @@ private[ml] trait VectorIndexerParams extends Params with HasInputCol with HasOu
 }
 
 /**
+ * :: Experimental ::
  * Class for indexing categorical feature columns in a dataset of [[Vector]].
  *
  * This has 2 usage modes:
@@ -92,24 +93,19 @@ private[ml] trait VectorIndexerParams extends Params with HasInputCol with HasOu
  *  - Add warning if a categorical feature has only 1 category.
  *  - Add option for allowing unknown categories.
  */
-@Since("1.4.0")
-class VectorIndexer @Since("1.4.0") (
-    @Since("1.4.0") override val uid: String)
-  extends Estimator[VectorIndexerModel] with VectorIndexerParams with DefaultParamsWritable {
+@Experimental
+class VectorIndexer(override val uid: String) extends Estimator[VectorIndexerModel]
+  with VectorIndexerParams with DefaultParamsWritable {
 
-  @Since("1.4.0")
   def this() = this(Identifiable.randomUID("vecIdx"))
 
   /** @group setParam */
-  @Since("1.4.0")
   def setMaxCategories(value: Int): this.type = set(maxCategories, value)
 
   /** @group setParam */
-  @Since("1.4.0")
   def setInputCol(value: String): this.type = set(inputCol, value)
 
   /** @group setParam */
-  @Since("1.4.0")
   def setOutputCol(value: String): this.type = set(outputCol, value)
 
   @Since("2.0.0")
@@ -130,7 +126,6 @@ class VectorIndexer @Since("1.4.0") (
     copyValues(model)
   }
 
-  @Since("1.4.0")
   override def transformSchema(schema: StructType): StructType = {
     // We do not transfer feature metadata since we do not know what types of features we will
     // produce in transform().
@@ -141,7 +136,6 @@ class VectorIndexer @Since("1.4.0") (
     SchemaUtils.appendColumn(schema, $(outputCol), dataType)
   }
 
-  @Since("1.4.1")
   override def copy(extra: ParamMap): VectorIndexer = defaultCopy(extra)
 }
 
@@ -245,6 +239,7 @@ object VectorIndexer extends DefaultParamsReadable[VectorIndexer] {
 }
 
 /**
+ * :: Experimental ::
  * Model fitted by [[VectorIndexer]]. Transform categorical features to use 0-based indices
  * instead of their original values.
  *  - Categorical features are mapped to indices.
@@ -260,17 +255,16 @@ object VectorIndexer extends DefaultParamsReadable[VectorIndexer] {
  *                      Values are maps from original features values to 0-based category indices.
  *                      If a feature is not in this map, it is treated as continuous.
  */
-@Since("1.4.0")
+@Experimental
 class VectorIndexerModel private[ml] (
-    @Since("1.4.0") override val uid: String,
-    @Since("1.4.0") val numFeatures: Int,
-    @Since("1.4.0") val categoryMaps: Map[Int, Map[Double, Int]])
+    override val uid: String,
+    val numFeatures: Int,
+    val categoryMaps: Map[Int, Map[Double, Int]])
   extends Model[VectorIndexerModel] with VectorIndexerParams with MLWritable {
 
   import VectorIndexerModel._
 
   /** Java-friendly version of [[categoryMaps]] */
-  @Since("1.4.0")
   def javaCategoryMaps: JMap[JInt, JMap[JDouble, JInt]] = {
     categoryMaps.mapValues(_.asJava).asJava.asInstanceOf[JMap[JInt, JMap[JDouble, JInt]]]
   }
@@ -348,11 +342,9 @@ class VectorIndexerModel private[ml] (
   }
 
   /** @group setParam */
-  @Since("1.4.0")
   def setInputCol(value: String): this.type = set(inputCol, value)
 
   /** @group setParam */
-  @Since("1.4.0")
   def setOutputCol(value: String): this.type = set(outputCol, value)
 
   @Since("2.0.0")
@@ -364,7 +356,6 @@ class VectorIndexerModel private[ml] (
     dataset.withColumn($(outputCol), newCol, newField.metadata)
   }
 
-  @Since("1.4.0")
   override def transformSchema(schema: StructType): StructType = {
     val dataType = new VectorUDT
     require(isDefined(inputCol),
@@ -424,7 +415,6 @@ class VectorIndexerModel private[ml] (
     newAttributeGroup.toStructField()
   }
 
-  @Since("1.4.1")
   override def copy(extra: ParamMap): VectorIndexerModel = {
     val copied = new VectorIndexerModel(uid, numFeatures, categoryMaps)
     copyValues(copied, extra).setParent(parent)
@@ -446,7 +436,7 @@ object VectorIndexerModel extends MLReadable[VectorIndexerModel] {
       DefaultParamsWriter.saveMetadata(instance, path, sc)
       val data = Data(instance.numFeatures, instance.categoryMaps)
       val dataPath = new Path(path, "data").toString
-      sparkSession.createDataFrame(Seq(data)).repartition(1).write.parquet(dataPath)
+      sqlContext.createDataFrame(Seq(data)).repartition(1).write.parquet(dataPath)
     }
   }
 
@@ -457,7 +447,7 @@ object VectorIndexerModel extends MLReadable[VectorIndexerModel] {
     override def load(path: String): VectorIndexerModel = {
       val metadata = DefaultParamsReader.loadMetadata(path, sc, className)
       val dataPath = new Path(path, "data").toString
-      val data = sparkSession.read.parquet(dataPath)
+      val data = sqlContext.read.parquet(dataPath)
         .select("numFeatures", "categoryMaps")
         .head()
       val numFeatures = data.getAs[Int](0)

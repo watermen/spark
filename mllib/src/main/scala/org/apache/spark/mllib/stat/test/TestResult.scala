@@ -17,7 +17,7 @@
 
 package org.apache.spark.mllib.stat.test
 
-import org.apache.spark.annotation.Since
+import org.apache.spark.annotation.{Experimental, Since}
 
 /**
  * Trait for hypothesis test results.
@@ -94,8 +94,10 @@ class ChiSqTestResult private[stat] (override val pValue: Double,
 }
 
 /**
+ * :: Experimental ::
  * Object containing the test results for the Kolmogorov-Smirnov test.
  */
+@Experimental
 @Since("1.5.0")
 class KolmogorovSmirnovTestResult private[stat] (
     @Since("1.5.0") override val pValue: Double,
@@ -111,8 +113,10 @@ class KolmogorovSmirnovTestResult private[stat] (
 }
 
 /**
+ * :: Experimental ::
  * Object containing the test results for streaming testing.
  */
+@Experimental
 @Since("1.6.0")
 private[stat] class StreamingTestResult @Since("1.6.0") (
     @Since("1.6.0") override val pValue: Double,

@@ -231,12 +231,7 @@ object SparkPlanTest {
     }
   }
 
-  /**
-   * Runs the plan
-   * @param outputPlan SparkPlan to be executed
-   * @param spark SqlContext used for execution of the plan
-   */
-  def executePlan(outputPlan: SparkPlan, spark: SQLContext): Seq[Row] = {
+  private def executePlan(outputPlan: SparkPlan, spark: SQLContext): Seq[Row] = {
     val execution = new QueryExecution(spark.sparkSession, null) {
       override lazy val sparkPlan: SparkPlan = outputPlan transform {
         case plan: SparkPlan =>

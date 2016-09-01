@@ -1,7 +1,7 @@
 ---
 layout: global
-title: Collaborative Filtering
-displayTitle: Collaborative Filtering
+title: Collaborative Filtering - spark.ml
+displayTitle: Collaborative Filtering - spark.ml
 ---
 
 * Table of contents

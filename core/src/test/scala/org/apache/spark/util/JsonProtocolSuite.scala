@@ -258,7 +258,7 @@ class JsonProtocolSuite extends SparkFunSuite {
   }
 
   test("FetchFailed backwards compatibility") {
-    // FetchFailed in Spark 1.1.0 does not have a "Message" property.
+    // FetchFailed in Spark 1.1.0 does not have an "Message" property.
     val fetchFailed = FetchFailed(BlockManagerId("With or", "without you", 15), 17, 18, 19,
       "ignored")
     val oldEvent = JsonProtocol.taskEndReasonToJson(fetchFailed)
@@ -966,7 +966,6 @@ private[spark] object JsonProtocolSuite extends Assertions {
       |    "Getting Result Time": 0,
       |    "Finish Time": 0,
       |    "Failed": false,
-      |    "Killed": false,
       |    "Accumulables": [
       |      {
       |        "ID": 1,
@@ -1013,7 +1012,6 @@ private[spark] object JsonProtocolSuite extends Assertions {
       |    "Getting Result Time": 0,
       |    "Finish Time": 0,
       |    "Failed": false,
-      |    "Killed": false,
       |    "Accumulables": [
       |      {
       |        "ID": 1,
@@ -1066,7 +1064,6 @@ private[spark] object JsonProtocolSuite extends Assertions {
       |    "Getting Result Time": 0,
       |    "Finish Time": 0,
       |    "Failed": false,
-      |    "Killed": false,
       |    "Accumulables": [
       |      {
       |        "ID": 1,
@@ -1164,7 +1161,6 @@ private[spark] object JsonProtocolSuite extends Assertions {
       |    "Getting Result Time": 0,
       |    "Finish Time": 0,
       |    "Failed": false,
-      |    "Killed": false,
       |    "Accumulables": [
       |      {
       |        "ID": 1,
@@ -1262,7 +1258,6 @@ private[spark] object JsonProtocolSuite extends Assertions {
       |    "Getting Result Time": 0,
       |    "Finish Time": 0,
       |    "Failed": false,
-      |    "Killed": false,
       |    "Accumulables": [
       |      {
       |        "ID": 1,

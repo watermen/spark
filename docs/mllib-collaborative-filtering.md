@@ -1,7 +1,7 @@
 ---
 layout: global
-title: Collaborative Filtering - RDD-based API
-displayTitle: Collaborative Filtering - RDD-based API
+title: Collaborative Filtering - spark.mllib
+displayTitle: Collaborative Filtering - spark.mllib
 ---
 
 * Table of contents

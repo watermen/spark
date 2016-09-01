@@ -37,8 +37,8 @@ case class OrcParDataWithKey(intField: Int, pi: Int, stringField: String, ps: St
 
 // TODO This test suite duplicates ParquetPartitionDiscoverySuite a lot
 class OrcPartitionDiscoverySuite extends QueryTest with TestHiveSingleton with BeforeAndAfterAll {
-  import spark._
-  import spark.implicits._
+  import hiveContext._
+  import hiveContext.implicits._
 
   val defaultPartitionName = ConfVars.DEFAULTPARTITIONNAME.defaultStrVal
 
@@ -59,7 +59,7 @@ class OrcPartitionDiscoverySuite extends QueryTest with TestHiveSingleton with B
   }
 
   protected def withTempTable(tableName: String)(f: => Unit): Unit = {
-    try f finally spark.catalog.dropTempView(tableName)
+    try f finally hiveContext.dropTempTable(tableName)
   }
 
   protected def makePartitionDir(

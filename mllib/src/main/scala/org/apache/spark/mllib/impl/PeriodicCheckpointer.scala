@@ -19,8 +19,7 @@ package org.apache.spark.mllib.impl
 
 import scala.collection.mutable
 
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.SparkContext
 import org.apache.spark.internal.Logging
@@ -161,23 +160,21 @@ private[mllib] abstract class PeriodicCheckpointer[T](
   private def removeCheckpointFile(): Unit = {
     val old = checkpointQueue.dequeue()
     // Since the old checkpoint is not deleted by Spark, we manually delete it.
-    getCheckpointFiles(old).foreach(
-      PeriodicCheckpointer.removeCheckpointFile(_, sc.hadoopConfiguration))
+    val fs = FileSystem.get(sc.hadoopConfiguration)
+    getCheckpointFiles(old).foreach(PeriodicCheckpointer.removeCheckpointFile(_, fs))
   }
 }
 
 private[spark] object PeriodicCheckpointer extends Logging {
 
   /** Delete a checkpoint file, and log a warning if deletion fails. */
-  def removeCheckpointFile(checkpointFile: String, conf: Configuration): Unit = {
+  def removeCheckpointFile(path: String, fs: FileSystem): Unit = {
     try {
-      val path = new Path(checkpointFile)
-      val fs = path.getFileSystem(conf)
-      fs.delete(path, true)
+      fs.delete(new Path(path), true)
     } catch {
       case e: Exception =>
         logWarning("PeriodicCheckpointer could not remove old checkpoint file: " +
-          checkpointFile)
+          path)
     }
   }
 }

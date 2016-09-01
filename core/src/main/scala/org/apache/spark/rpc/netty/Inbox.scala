@@ -52,7 +52,7 @@ private[netty] case class RemoteProcessConnectionError(cause: Throwable, remoteA
   extends InboxMessage
 
 /**
- * An inbox that stores messages for an [[RpcEndpoint]] and posts messages to it thread-safely.
+ * A inbox that stores messages for an [[RpcEndpoint]] and posts messages to it thread-safely.
  */
 private[netty] class Inbox(
     val endpointRef: NettyRpcEndpointRef,

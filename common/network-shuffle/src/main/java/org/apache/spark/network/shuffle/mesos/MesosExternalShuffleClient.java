@@ -44,7 +44,7 @@ import org.apache.spark.network.util.TransportConf;
  * has to detect this itself.
  */
 public class MesosExternalShuffleClient extends ExternalShuffleClient {
-  private static final Logger logger = LoggerFactory.getLogger(MesosExternalShuffleClient.class);
+  private final Logger logger = LoggerFactory.getLogger(MesosExternalShuffleClient.class);
 
   private final ScheduledExecutorService heartbeaterThread =
       Executors.newSingleThreadScheduledExecutor(

@@ -1,7 +1,7 @@
 ---
 layout: global
-title: Survival Regression
-displayTitle: Survival Regression
+title: Survival Regression - spark.ml
+displayTitle: Survival Regression - spark.ml
 ---
 
   > This section has been moved into the

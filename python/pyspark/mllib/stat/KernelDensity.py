@@ -28,6 +28,8 @@ from pyspark.rdd import RDD
 
 class KernelDensity(object):
     """
+    .. note:: Experimental
+
     Estimate probability density at required points given a RDD of samples
     from the population.
 

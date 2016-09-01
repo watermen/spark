@@ -152,7 +152,7 @@ object DecimalType extends AbstractDataType {
   }
 
   /**
-   * Returns if dt is a DecimalType that fits inside an int
+   * Returns if dt is a DecimalType that fits inside a int
    */
   def is32BitDecimalType(dt: DataType): Boolean = {
     dt match {

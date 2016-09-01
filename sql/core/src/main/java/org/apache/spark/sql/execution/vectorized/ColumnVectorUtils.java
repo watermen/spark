@@ -23,6 +23,8 @@ import java.sql.Date;
 import java.util.Iterator;
 import java.util.List;
 
+import org.apache.commons.lang.NotImplementedException;
+
 import org.apache.spark.memory.MemoryMode;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.catalyst.InternalRow;
@@ -110,7 +112,7 @@ public class ColumnVectorUtils {
       }
       return result;
     } else {
-      throw new UnsupportedOperationException();
+      throw new NotImplementedException();
     }
   }
 
@@ -159,7 +161,7 @@ public class ColumnVectorUtils {
       } else if (t instanceof DateType) {
         dst.appendInt(DateTimeUtils.fromJavaDate((Date)o));
       } else {
-        throw new UnsupportedOperationException("Type " + t);
+        throw new NotImplementedException("Type " + t);
       }
     }
   }

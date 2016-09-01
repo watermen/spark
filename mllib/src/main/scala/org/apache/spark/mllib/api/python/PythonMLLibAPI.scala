@@ -30,6 +30,8 @@ import net.razorvine.pickle._
 
 import org.apache.spark.api.java.{JavaRDD, JavaSparkContext}
 import org.apache.spark.api.python.SerDeUtil
+import org.apache.spark.ml.feature.{LabeledPoint => MLLabeledPoint}
+import org.apache.spark.ml.linalg.{DenseMatrix => NewDenseMatrix, DenseVector => NewDenseVector, SparseMatrix => NewSparseMatrix, SparseVector => NewSparseVector, Vector => NewVector, Vectors => NewVectors}
 import org.apache.spark.mllib.classification._
 import org.apache.spark.mllib.clustering._
 import org.apache.spark.mllib.evaluation.RankingMetrics
@@ -41,7 +43,8 @@ import org.apache.spark.mllib.optimization._
 import org.apache.spark.mllib.random.{RandomRDDs => RG}
 import org.apache.spark.mllib.recommendation._
 import org.apache.spark.mllib.regression._
-import org.apache.spark.mllib.stat.{KernelDensity, MultivariateStatisticalSummary, Statistics}
+import org.apache.spark.mllib.stat.{
+  KernelDensity, MultivariateStatisticalSummary, Statistics}
 import org.apache.spark.mllib.stat.correlation.CorrelationNames
 import org.apache.spark.mllib.stat.distribution.MultivariateGaussian
 import org.apache.spark.mllib.stat.test.{ChiSqTestResult, KolmogorovSmirnovTestResult}
@@ -53,7 +56,7 @@ import org.apache.spark.mllib.tree.model.{DecisionTreeModel, GradientBoostedTree
   RandomForestModel}
 import org.apache.spark.mllib.util.{LinearDataGenerator, MLUtils}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SQLContext}
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.util.Utils
 
@@ -149,7 +152,7 @@ private[python] class PythonMLLibAPI extends Serializable {
       intercept: Boolean,
       validateData: Boolean,
       convergenceTol: Double): JList[Object] = {
-    val lrAlg = new LinearRegressionWithSGD(1.0, 100, 0.0, 1.0)
+    val lrAlg = new LinearRegressionWithSGD()
     lrAlg.setIntercept(intercept)
       .setValidateData(validateData)
     lrAlg.optimizer
@@ -178,7 +181,7 @@ private[python] class PythonMLLibAPI extends Serializable {
       intercept: Boolean,
       validateData: Boolean,
       convergenceTol: Double): JList[Object] = {
-    val lassoAlg = new LassoWithSGD(1.0, 100, 0.01, 1.0)
+    val lassoAlg = new LassoWithSGD()
     lassoAlg.setIntercept(intercept)
       .setValidateData(validateData)
     lassoAlg.optimizer
@@ -206,7 +209,7 @@ private[python] class PythonMLLibAPI extends Serializable {
       intercept: Boolean,
       validateData: Boolean,
       convergenceTol: Double): JList[Object] = {
-    val ridgeAlg = new RidgeRegressionWithSGD(1.0, 100, 0.01, 1.0)
+    val ridgeAlg = new RidgeRegressionWithSGD()
     ridgeAlg.setIntercept(intercept)
       .setValidateData(validateData)
     ridgeAlg.optimizer
@@ -265,7 +268,7 @@ private[python] class PythonMLLibAPI extends Serializable {
       intercept: Boolean,
       validateData: Boolean,
       convergenceTol: Double): JList[Object] = {
-    val LogRegAlg = new LogisticRegressionWithSGD(1.0, 100, 0.01, 1.0)
+    val LogRegAlg = new LogisticRegressionWithSGD()
     LogRegAlg.setIntercept(intercept)
       .setValidateData(validateData)
     LogRegAlg.optimizer
@@ -1127,7 +1130,7 @@ private[python] class PythonMLLibAPI extends Serializable {
    * Wrapper around RowMatrix constructor.
    */
   def createRowMatrix(rows: JavaRDD[Vector], numRows: Long, numCols: Int): RowMatrix = {
-    new RowMatrix(rows.rdd, numRows, numCols)
+    new RowMatrix(rows.rdd.retag(classOf[Vector]), numRows, numCols)
   }
 
   /**
@@ -1175,9 +1178,8 @@ private[python] class PythonMLLibAPI extends Serializable {
   def getIndexedRows(indexedRowMatrix: IndexedRowMatrix): DataFrame = {
     // We use DataFrames for serialization of IndexedRows to Python,
     // so return a DataFrame.
-    val sc = indexedRowMatrix.rows.sparkContext
-    val spark = SparkSession.builder().sparkContext(sc).getOrCreate()
-    spark.createDataFrame(indexedRowMatrix.rows)
+    val sqlContext = SQLContext.getOrCreate(indexedRowMatrix.rows.sparkContext)
+    sqlContext.createDataFrame(indexedRowMatrix.rows)
   }
 
   /**
@@ -1186,9 +1188,8 @@ private[python] class PythonMLLibAPI extends Serializable {
   def getMatrixEntries(coordinateMatrix: CoordinateMatrix): DataFrame = {
     // We use DataFrames for serialization of MatrixEntry entries to
     // Python, so return a DataFrame.
-    val sc = coordinateMatrix.entries.sparkContext
-    val spark = SparkSession.builder().sparkContext(sc).getOrCreate()
-    spark.createDataFrame(coordinateMatrix.entries)
+    val sqlContext = SQLContext.getOrCreate(coordinateMatrix.entries.sparkContext)
+    sqlContext.createDataFrame(coordinateMatrix.entries)
   }
 
   /**
@@ -1197,56 +1198,29 @@ private[python] class PythonMLLibAPI extends Serializable {
   def getMatrixBlocks(blockMatrix: BlockMatrix): DataFrame = {
     // We use DataFrames for serialization of sub-matrix blocks to
     // Python, so return a DataFrame.
-    val sc = blockMatrix.blocks.sparkContext
-    val spark = SparkSession.builder().sparkContext(sc).getOrCreate()
-    spark.createDataFrame(blockMatrix.blocks)
-  }
-
-  /**
-   * Python-friendly version of [[MLUtils.convertVectorColumnsToML()]].
-   */
-  def convertVectorColumnsToML(dataset: DataFrame, cols: JArrayList[String]): DataFrame = {
-    MLUtils.convertVectorColumnsToML(dataset, cols.asScala: _*)
-  }
-
-  /**
-   * Python-friendly version of [[MLUtils.convertVectorColumnsFromML()]]
-   */
-  def convertVectorColumnsFromML(dataset: DataFrame, cols: JArrayList[String]): DataFrame = {
-    MLUtils.convertVectorColumnsFromML(dataset, cols.asScala: _*)
-  }
-
-  /**
-   * Python-friendly version of [[MLUtils.convertMatrixColumnsToML()]].
-   */
-  def convertMatrixColumnsToML(dataset: DataFrame, cols: JArrayList[String]): DataFrame = {
-    MLUtils.convertMatrixColumnsToML(dataset, cols.asScala: _*)
-  }
-
-  /**
-   * Python-friendly version of [[MLUtils.convertMatrixColumnsFromML()]]
-   */
-  def convertMatrixColumnsFromML(dataset: DataFrame, cols: JArrayList[String]): DataFrame = {
-    MLUtils.convertMatrixColumnsFromML(dataset, cols.asScala: _*)
+    val sqlContext = SQLContext.getOrCreate(blockMatrix.blocks.sparkContext)
+    sqlContext.createDataFrame(blockMatrix.blocks)
   }
 }
 
 /**
- * Basic SerDe utility class.
+ * SerDe utility functions for PythonMLLibAPI.
  */
-private[spark] abstract class SerDeBase {
+private[spark] object SerDe extends Serializable {
 
-  val PYSPARK_PACKAGE: String
-  def initialize(): Unit
+  val PYSPARK_PACKAGE = "pyspark.mllib"
+  val PYSPARK_ML_PACKAGE = "pyspark.ml"
 
   /**
    * Base class used for pickle
    */
-  private[spark] abstract class BasePickler[T: ClassTag]
+  private[python] abstract class BasePickler[T: ClassTag]
     extends IObjectPickler with IObjectConstructor {
 
+    protected def packageName: String = PYSPARK_PACKAGE
+
     private val cls = implicitly[ClassTag[T]].runtimeClass
-    private val module = PYSPARK_PACKAGE + "." + cls.getName.split('.')(4)
+    private val module = packageName + "." + cls.getName.split('.')(4)
     private val name = cls.getSimpleName
 
     // register this to Pickler and Unpickler
@@ -1293,69 +1267,7 @@ private[spark] abstract class SerDeBase {
     private[python] def saveState(obj: Object, out: OutputStream, pickler: Pickler)
   }
 
-  def dumps(obj: AnyRef): Array[Byte] = {
-    obj match {
-      // Pickler in Python side cannot deserialize Scala Array normally. See SPARK-12834.
-      case array: Array[_] => new Pickler().dumps(array.toSeq.asJava)
-      case _ => new Pickler().dumps(obj)
-    }
-  }
-
-  def loads(bytes: Array[Byte]): AnyRef = {
-    new Unpickler().loads(bytes)
-  }
-
-  /* convert object into Tuple */
-  def asTupleRDD(rdd: RDD[Array[Any]]): RDD[(Int, Int)] = {
-    rdd.map(x => (x(0).asInstanceOf[Int], x(1).asInstanceOf[Int]))
-  }
-
-  /* convert RDD[Tuple2[,]] to RDD[Array[Any]] */
-  def fromTuple2RDD(rdd: RDD[(Any, Any)]): RDD[Array[Any]] = {
-    rdd.map(x => Array(x._1, x._2))
-  }
-
-  /**
-   * Convert an RDD of Java objects to an RDD of serialized Python objects, that is usable by
-   * PySpark.
-   */
-  def javaToPython(jRDD: JavaRDD[Any]): JavaRDD[Array[Byte]] = {
-    jRDD.rdd.mapPartitions { iter =>
-      initialize()  // let it called in executor
-      new SerDeUtil.AutoBatchedPickler(iter)
-    }
-  }
-
-  /**
-   * Convert an RDD of serialized Python objects to RDD of objects, that is usable by PySpark.
-   */
-  def pythonToJava(pyRDD: JavaRDD[Array[Byte]], batched: Boolean): JavaRDD[Any] = {
-    pyRDD.rdd.mapPartitions { iter =>
-      initialize()  // let it called in executor
-      val unpickle = new Unpickler
-      iter.flatMap { row =>
-        val obj = unpickle.loads(row)
-        if (batched) {
-          obj match {
-            case list: JArrayList[_] => list.asScala
-            case arr: Array[_] => arr
-          }
-        } else {
-          Seq(obj)
-        }
-      }
-    }.toJavaRDD()
-  }
-}
-
-/**
- * SerDe utility functions for PythonMLLibAPI.
- */
-private[spark] object SerDe extends SerDeBase with Serializable {
-
-  override val PYSPARK_PACKAGE = "pyspark.mllib"
-
-  // Pickler for DenseVector
+  // Pickler for (mllib) DenseVector
   private[python] class DenseVectorPickler extends BasePickler[DenseVector] {
 
     def saveState(obj: Object, out: OutputStream, pickler: Pickler): Unit = {
@@ -1387,7 +1299,41 @@ private[spark] object SerDe extends SerDeBase with Serializable {
     }
   }
 
-  // Pickler for DenseMatrix
+  // Pickler for (new) DenseVector
+  private[python] class NewDenseVectorPickler extends BasePickler[NewDenseVector] {
+
+    override protected def packageName = PYSPARK_ML_PACKAGE
+
+    def saveState(obj: Object, out: OutputStream, pickler: Pickler): Unit = {
+      val vector: NewDenseVector = obj.asInstanceOf[NewDenseVector]
+      val bytes = new Array[Byte](8 * vector.size)
+      val bb = ByteBuffer.wrap(bytes)
+      bb.order(ByteOrder.nativeOrder())
+      val db = bb.asDoubleBuffer()
+      db.put(vector.values)
+
+      out.write(Opcodes.BINSTRING)
+      out.write(PickleUtils.integer_to_bytes(bytes.length))
+      out.write(bytes)
+      out.write(Opcodes.TUPLE1)
+    }
+
+    def construct(args: Array[Object]): Object = {
+      require(args.length == 1)
+      if (args.length != 1) {
+        throw new PickleException("should be 1")
+      }
+      val bytes = getBytes(args(0))
+      val bb = ByteBuffer.wrap(bytes, 0, bytes.length)
+      bb.order(ByteOrder.nativeOrder())
+      val db = bb.asDoubleBuffer()
+      val ans = new Array[Double](bytes.length / 8)
+      db.get(ans)
+      NewVectors.dense(ans)
+    }
+  }
+
+  // Pickler for (mllib) DenseMatrix
   private[python] class DenseMatrixPickler extends BasePickler[DenseMatrix] {
 
     def saveState(obj: Object, out: OutputStream, pickler: Pickler): Unit = {
@@ -1424,7 +1370,46 @@ private[spark] object SerDe extends SerDeBase with Serializable {
     }
   }
 
-  // Pickler for SparseMatrix
+  // Pickler for (new) DenseMatrix
+  private[python] class NewDenseMatrixPickler extends BasePickler[NewDenseMatrix] {
+
+    override protected def packageName = PYSPARK_ML_PACKAGE
+
+    def saveState(obj: Object, out: OutputStream, pickler: Pickler): Unit = {
+      val m: NewDenseMatrix = obj.asInstanceOf[NewDenseMatrix]
+      val bytes = new Array[Byte](8 * m.values.length)
+      val order = ByteOrder.nativeOrder()
+      val isTransposed = if (m.isTransposed) 1 else 0
+      ByteBuffer.wrap(bytes).order(order).asDoubleBuffer().put(m.values)
+
+      out.write(Opcodes.MARK)
+      out.write(Opcodes.BININT)
+      out.write(PickleUtils.integer_to_bytes(m.numRows))
+      out.write(Opcodes.BININT)
+      out.write(PickleUtils.integer_to_bytes(m.numCols))
+      out.write(Opcodes.BINSTRING)
+      out.write(PickleUtils.integer_to_bytes(bytes.length))
+      out.write(bytes)
+      out.write(Opcodes.BININT)
+      out.write(PickleUtils.integer_to_bytes(isTransposed))
+      out.write(Opcodes.TUPLE)
+    }
+
+    def construct(args: Array[Object]): Object = {
+      if (args.length != 4) {
+        throw new PickleException("should be 4")
+      }
+      val bytes = getBytes(args(2))
+      val n = bytes.length / 8
+      val values = new Array[Double](n)
+      val order = ByteOrder.nativeOrder()
+      ByteBuffer.wrap(bytes).order(order).asDoubleBuffer().get(values)
+      val isTransposed = args(3).asInstanceOf[Int] == 1
+      new NewDenseMatrix(args(0).asInstanceOf[Int], args(1).asInstanceOf[Int], values, isTransposed)
+    }
+  }
+
+  // Pickler for (mllib) SparseMatrix
   private[python] class SparseMatrixPickler extends BasePickler[SparseMatrix] {
 
     def saveState(obj: Object, out: OutputStream, pickler: Pickler): Unit = {
@@ -1479,7 +1464,64 @@ private[spark] object SerDe extends SerDeBase with Serializable {
     }
   }
 
-  // Pickler for SparseVector
+  // Pickler for (new) SparseMatrix
+  private[python] class NewSparseMatrixPickler extends BasePickler[NewSparseMatrix] {
+
+    override protected def packageName = PYSPARK_ML_PACKAGE
+
+    def saveState(obj: Object, out: OutputStream, pickler: Pickler): Unit = {
+      val s = obj.asInstanceOf[NewSparseMatrix]
+      val order = ByteOrder.nativeOrder()
+
+      val colPtrsBytes = new Array[Byte](4 * s.colPtrs.length)
+      val indicesBytes = new Array[Byte](4 * s.rowIndices.length)
+      val valuesBytes = new Array[Byte](8 * s.values.length)
+      val isTransposed = if (s.isTransposed) 1 else 0
+      ByteBuffer.wrap(colPtrsBytes).order(order).asIntBuffer().put(s.colPtrs)
+      ByteBuffer.wrap(indicesBytes).order(order).asIntBuffer().put(s.rowIndices)
+      ByteBuffer.wrap(valuesBytes).order(order).asDoubleBuffer().put(s.values)
+
+      out.write(Opcodes.MARK)
+      out.write(Opcodes.BININT)
+      out.write(PickleUtils.integer_to_bytes(s.numRows))
+      out.write(Opcodes.BININT)
+      out.write(PickleUtils.integer_to_bytes(s.numCols))
+      out.write(Opcodes.BINSTRING)
+      out.write(PickleUtils.integer_to_bytes(colPtrsBytes.length))
+      out.write(colPtrsBytes)
+      out.write(Opcodes.BINSTRING)
+      out.write(PickleUtils.integer_to_bytes(indicesBytes.length))
+      out.write(indicesBytes)
+      out.write(Opcodes.BINSTRING)
+      out.write(PickleUtils.integer_to_bytes(valuesBytes.length))
+      out.write(valuesBytes)
+      out.write(Opcodes.BININT)
+      out.write(PickleUtils.integer_to_bytes(isTransposed))
+      out.write(Opcodes.TUPLE)
+    }
+
+    def construct(args: Array[Object]): Object = {
+      if (args.length != 6) {
+        throw new PickleException("should be 6")
+      }
+      val order = ByteOrder.nativeOrder()
+      val colPtrsBytes = getBytes(args(2))
+      val indicesBytes = getBytes(args(3))
+      val valuesBytes = getBytes(args(4))
+      val colPtrs = new Array[Int](colPtrsBytes.length / 4)
+      val rowIndices = new Array[Int](indicesBytes.length / 4)
+      val values = new Array[Double](valuesBytes.length / 8)
+      ByteBuffer.wrap(colPtrsBytes).order(order).asIntBuffer().get(colPtrs)
+      ByteBuffer.wrap(indicesBytes).order(order).asIntBuffer().get(rowIndices)
+      ByteBuffer.wrap(valuesBytes).order(order).asDoubleBuffer().get(values)
+      val isTransposed = args(5).asInstanceOf[Int] == 1
+      new NewSparseMatrix(
+        args(0).asInstanceOf[Int], args(1).asInstanceOf[Int], colPtrs, rowIndices, values,
+        isTransposed)
+    }
+  }
+
+  // Pickler for (mllib) SparseVector
   private[python] class SparseVectorPickler extends BasePickler[SparseVector] {
 
     def saveState(obj: Object, out: OutputStream, pickler: Pickler): Unit = {
@@ -1518,6 +1560,50 @@ private[spark] object SerDe extends SerDeBase with Serializable {
         ByteBuffer.wrap(valueBytes).order(order).asDoubleBuffer().get(values)
       }
       new SparseVector(size, indices, values)
+    }
+  }
+
+  // Pickler for (new) SparseVector
+  private[python] class NewSparseVectorPickler extends BasePickler[NewSparseVector] {
+
+    override protected def packageName = PYSPARK_ML_PACKAGE
+
+    def saveState(obj: Object, out: OutputStream, pickler: Pickler): Unit = {
+      val v: NewSparseVector = obj.asInstanceOf[NewSparseVector]
+      val n = v.indices.length
+      val indiceBytes = new Array[Byte](4 * n)
+      val order = ByteOrder.nativeOrder()
+      ByteBuffer.wrap(indiceBytes).order(order).asIntBuffer().put(v.indices)
+      val valueBytes = new Array[Byte](8 * n)
+      ByteBuffer.wrap(valueBytes).order(order).asDoubleBuffer().put(v.values)
+
+      out.write(Opcodes.BININT)
+      out.write(PickleUtils.integer_to_bytes(v.size))
+      out.write(Opcodes.BINSTRING)
+      out.write(PickleUtils.integer_to_bytes(indiceBytes.length))
+      out.write(indiceBytes)
+      out.write(Opcodes.BINSTRING)
+      out.write(PickleUtils.integer_to_bytes(valueBytes.length))
+      out.write(valueBytes)
+      out.write(Opcodes.TUPLE3)
+    }
+
+    def construct(args: Array[Object]): Object = {
+      if (args.length != 3) {
+        throw new PickleException("should be 3")
+      }
+      val size = args(0).asInstanceOf[Int]
+      val indiceBytes = getBytes(args(1))
+      val valueBytes = getBytes(args(2))
+      val n = indiceBytes.length / 4
+      val indices = new Array[Int](n)
+      val values = new Array[Double](n)
+      if (n > 0) {
+        val order = ByteOrder.nativeOrder()
+        ByteBuffer.wrap(indiceBytes).order(order).asIntBuffer().get(indices)
+        ByteBuffer.wrap(valueBytes).order(order).asDoubleBuffer().get(values)
+      }
+      new NewSparseVector(size, indices, values)
     }
   }
 
@@ -1567,7 +1653,7 @@ private[spark] object SerDe extends SerDeBase with Serializable {
   var initialized = false
   // This should be called before trying to serialize any above classes
   // In cluster mode, this should be put in the closure
-  override def initialize(): Unit = {
+  def initialize(): Unit = {
     SerDeUtil.initialize()
     synchronized {
       if (!initialized) {
@@ -1575,6 +1661,10 @@ private[spark] object SerDe extends SerDeBase with Serializable {
         new DenseMatrixPickler().register()
         new SparseMatrixPickler().register()
         new SparseVectorPickler().register()
+        new NewDenseVectorPickler().register()
+        new NewDenseMatrixPickler().register()
+        new NewSparseMatrixPickler().register()
+        new NewSparseVectorPickler().register()
         new LabeledPointPickler().register()
         new RatingPickler().register()
         initialized = true
@@ -1583,4 +1673,58 @@ private[spark] object SerDe extends SerDeBase with Serializable {
   }
   // will not called in Executor automatically
   initialize()
+
+  def dumps(obj: AnyRef): Array[Byte] = {
+    obj match {
+      // Pickler in Python side cannot deserialize Scala Array normally. See SPARK-12834.
+      case array: Array[_] => new Pickler().dumps(array.toSeq.asJava)
+      case _ => new Pickler().dumps(obj)
+    }
+  }
+
+  def loads(bytes: Array[Byte]): AnyRef = {
+    new Unpickler().loads(bytes)
+  }
+
+  /* convert object into Tuple */
+  def asTupleRDD(rdd: RDD[Array[Any]]): RDD[(Int, Int)] = {
+    rdd.map(x => (x(0).asInstanceOf[Int], x(1).asInstanceOf[Int]))
+  }
+
+  /* convert RDD[Tuple2[,]] to RDD[Array[Any]] */
+  def fromTuple2RDD(rdd: RDD[(Any, Any)]): RDD[Array[Any]] = {
+    rdd.map(x => Array(x._1, x._2))
+  }
+
+  /**
+   * Convert an RDD of Java objects to an RDD of serialized Python objects, that is usable by
+   * PySpark.
+   */
+  def javaToPython(jRDD: JavaRDD[Any]): JavaRDD[Array[Byte]] = {
+    jRDD.rdd.mapPartitions { iter =>
+      initialize()  // let it called in executor
+      new SerDeUtil.AutoBatchedPickler(iter)
+    }
+  }
+
+  /**
+   * Convert an RDD of serialized Python objects to RDD of objects, that is usable by PySpark.
+   */
+  def pythonToJava(pyRDD: JavaRDD[Array[Byte]], batched: Boolean): JavaRDD[Any] = {
+    pyRDD.rdd.mapPartitions { iter =>
+      initialize()  // let it called in executor
+      val unpickle = new Unpickler
+      iter.flatMap { row =>
+        val obj = unpickle.loads(row)
+        if (batched) {
+          obj match {
+            case list: JArrayList[_] => list.asScala
+            case arr: Array[_] => arr
+          }
+        } else {
+          Seq(obj)
+        }
+      }
+    }.toJavaRDD()
+  }
 }

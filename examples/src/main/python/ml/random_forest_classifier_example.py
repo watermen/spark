@@ -23,7 +23,7 @@ from __future__ import print_function
 # $example on$
 from pyspark.ml import Pipeline
 from pyspark.ml.classification import RandomForestClassifier
-from pyspark.ml.feature import IndexToString, StringIndexer, VectorIndexer
+from pyspark.ml.feature import StringIndexer, VectorIndexer
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 # $example off$
 from pyspark.sql import SparkSession
@@ -31,7 +31,7 @@ from pyspark.sql import SparkSession
 if __name__ == "__main__":
     spark = SparkSession\
         .builder\
-        .appName("RandomForestClassifierExample")\
+        .appName("random_forest_classifier_example")\
         .getOrCreate()
 
     # $example on$
@@ -41,7 +41,6 @@ if __name__ == "__main__":
     # Index labels, adding metadata to the label column.
     # Fit on whole dataset to include all labels in index.
     labelIndexer = StringIndexer(inputCol="label", outputCol="indexedLabel").fit(data)
-
     # Automatically identify categorical features, and index them.
     # Set maxCategories so features with > 4 distinct values are treated as continuous.
     featureIndexer =\
@@ -51,14 +50,10 @@ if __name__ == "__main__":
     (trainingData, testData) = data.randomSplit([0.7, 0.3])
 
     # Train a RandomForest model.
-    rf = RandomForestClassifier(labelCol="indexedLabel", featuresCol="indexedFeatures", numTrees=10)
-
-    # Convert indexed labels back to original labels.
-    labelConverter = IndexToString(inputCol="prediction", outputCol="predictedLabel",
-                                   labels=labelIndexer.labels)
+    rf = RandomForestClassifier(labelCol="indexedLabel", featuresCol="indexedFeatures")
 
     # Chain indexers and forest in a Pipeline
-    pipeline = Pipeline(stages=[labelIndexer, featureIndexer, rf, labelConverter])
+    pipeline = Pipeline(stages=[labelIndexer, featureIndexer, rf])
 
     # Train model.  This also runs the indexers.
     model = pipeline.fit(trainingData)
@@ -67,11 +62,11 @@ if __name__ == "__main__":
     predictions = model.transform(testData)
 
     # Select example rows to display.
-    predictions.select("predictedLabel", "label", "features").show(5)
+    predictions.select("prediction", "indexedLabel", "features").show(5)
 
     # Select (prediction, true label) and compute test error
     evaluator = MulticlassClassificationEvaluator(
-        labelCol="indexedLabel", predictionCol="prediction", metricName="accuracy")
+        labelCol="indexedLabel", predictionCol="prediction", metricName="precision")
     accuracy = evaluator.evaluate(predictions)
     print("Test Error = %g" % (1.0 - accuracy))
 

@@ -21,6 +21,7 @@ package org.apache.spark.examples.ml
 // $example on$
 import org.apache.spark.ml.classification.{LogisticRegression, OneVsRest}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
+import org.apache.spark.sql.DataFrame
 // $example off$
 import org.apache.spark.sql.SparkSession
 
@@ -42,7 +43,7 @@ object OneVsRestExample {
 
     // $example on$
     // load data file.
-    val inputData = spark.read.format("libsvm")
+    val inputData: DataFrame = spark.read.format("libsvm")
       .load("data/mllib/sample_multiclass_classification_data.txt")
 
     // generate the train/test split.
@@ -65,11 +66,11 @@ object OneVsRestExample {
 
     // obtain evaluator.
     val evaluator = new MulticlassClassificationEvaluator()
-      .setMetricName("accuracy")
+      .setMetricName("precision")
 
     // compute the classification error on test data.
-    val accuracy = evaluator.evaluate(predictions)
-    println(s"Test Error = ${1 - accuracy}")
+    val precision = evaluator.evaluate(predictions)
+    println(s"Test Error : ${1 - precision}")
     // $example off$
 
     spark.stop()

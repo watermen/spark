@@ -101,9 +101,7 @@ private[spark] class MemoryStore(
     conf.getLong("spark.storage.unrollMemoryThreshold", 1024 * 1024)
 
   /** Total amount of memory available for storage, in bytes. */
-  private def maxMemory: Long = {
-    memoryManager.maxOnHeapStorageMemory + memoryManager.maxOffHeapStorageMemory
-  }
+  private def maxMemory: Long = memoryManager.maxOnHeapStorageMemory
 
   if (maxMemory < unrollMemoryThreshold) {
     logWarning(s"Max memory ${Utils.bytesToString(maxMemory)} is less than the initial memory " +
@@ -330,7 +328,7 @@ private[spark] class MemoryStore(
     redirectableStream.setOutputStream(bbos)
     val serializationStream: SerializationStream = {
       val ser = serializerManager.getSerializer(classTag).newInstance()
-      ser.serializeStream(serializerManager.wrapStream(blockId, redirectableStream))
+      ser.serializeStream(serializerManager.wrapForCompression(blockId, redirectableStream))
     }
 
     // Request enough memory to begin unrolling
@@ -379,8 +377,7 @@ private[spark] class MemoryStore(
         entries.put(blockId, entry)
       }
       logInfo("Block %s stored as bytes in memory (estimated size %s, free %s)".format(
-        blockId, Utils.bytesToString(entry.size),
-        Utils.bytesToString(maxMemory - blocksMemoryUsed)))
+        blockId, Utils.bytesToString(entry.size), Utils.bytesToString(blocksMemoryUsed)))
       Right(entry.size)
     } else {
       // We ran out of space while unrolling the values for this block

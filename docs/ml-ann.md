@@ -1,7 +1,7 @@
 ---
 layout: global
-title: Multilayer perceptron classifier
-displayTitle: Multilayer perceptron classifier
+title: Multilayer perceptron classifier - spark.ml
+displayTitle: Multilayer perceptron classifier - spark.ml
 ---
 
   > This section has been moved into the

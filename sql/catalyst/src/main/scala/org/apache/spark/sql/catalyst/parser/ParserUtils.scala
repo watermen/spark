@@ -31,12 +31,16 @@ import org.apache.spark.sql.catalyst.trees.{CurrentOrigin, Origin}
 object ParserUtils {
   /** Get the command which created the token. */
   def command(ctx: ParserRuleContext): String = {
-    val stream = ctx.getStart.getInputStream
+    command(ctx.getStart.getInputStream)
+  }
+
+  /** Get the command which created the token. */
+  def command(stream: CharStream): String = {
     stream.getText(Interval.of(0, stream.size()))
   }
 
-  def operationNotAllowed(message: String, ctx: ParserRuleContext): Nothing = {
-    throw new ParseException(s"Operation not allowed: $message", ctx)
+  def operationNotAllowed(message: String, ctx: ParserRuleContext): ParseException = {
+    new ParseException(s"Operation not allowed: $message", ctx)
   }
 
   /** Check if duplicate keys exist in a set of key-value pairs. */
@@ -70,12 +74,11 @@ object ParserUtils {
 
   /** Get the origin (line and position) of the token. */
   def position(token: Token): Origin = {
-    val opt = Option(token)
-    Origin(opt.map(_.getLine), opt.map(_.getCharPositionInLine))
+    Origin(Option(token.getLine), Option(token.getCharPositionInLine))
   }
 
-  /** Validate the condition. If it doesn't throw a parse exception. */
-  def validate(f: => Boolean, message: String, ctx: ParserRuleContext): Unit = {
+  /** Assert if a condition holds. If it doesn't throw a parse exception. */
+  def assert(f: => Boolean, message: String, ctx: ParserRuleContext): Unit = {
     if (!f) {
       throw new ParseException(message, ctx)
     }

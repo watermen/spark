@@ -20,6 +20,7 @@ package org.apache.spark.sql.hive.client
 import java.io.{ByteArrayOutputStream, File, PrintStream}
 
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
 import org.apache.hadoop.hive.serde2.`lazy`.LazySimpleSerDe
 import org.apache.hadoop.mapred.TextInputFormat
@@ -31,11 +32,10 @@ import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.NoSuchPermanentFunctionException
 import org.apache.spark.sql.catalyst.catalog._
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, EqualTo, Literal}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, EqualTo, Literal, NamedExpression}
 import org.apache.spark.sql.catalyst.util.quietly
 import org.apache.spark.sql.hive.HiveUtils
 import org.apache.spark.sql.types.IntegerType
-import org.apache.spark.sql.types.StructType
 import org.apache.spark.tags.ExtendedHiveTest
 import org.apache.spark.util.{MutableURLClassLoader, Utils}
 
@@ -146,14 +146,14 @@ class VersionsSuite extends SparkFunSuite with Logging {
       CatalogTable(
         identifier = TableIdentifier(tableName, Some(database)),
         tableType = CatalogTableType.MANAGED,
-        schema = new StructType().add("key", "int"),
+        schema = Seq(CatalogColumn("key", "int")),
         storage = CatalogStorageFormat(
           locationUri = None,
           inputFormat = Some(classOf[TextInputFormat].getName),
           outputFormat = Some(classOf[HiveIgnoreKeyTextOutputFormat[_, _]].getName),
           serde = Some(classOf[LazySimpleSerDe].getName()),
           compressed = false,
-          properties = Map.empty
+          serdeProperties = Map.empty
         ))
     }
 
@@ -218,12 +218,6 @@ class VersionsSuite extends SparkFunSuite with Logging {
         holdDDLTime = false)
     }
 
-    test(s"$version: tableExists") {
-      // No exception should be thrown
-      assert(client.tableExists("default", "src"))
-      assert(!client.tableExists("default", "nonexistent"))
-    }
-
     test(s"$version: getTable") {
       // No exception should be thrown
       client.getTable("default", "src")
@@ -255,19 +249,7 @@ class VersionsSuite extends SparkFunSuite with Logging {
     }
 
     test(s"$version: dropTable") {
-      val versionsWithoutPurge = versions.takeWhile(_ != "0.14")
-      // First try with the purge option set. This should fail if the version is < 0.14, in which
-      // case we check the version and try without it.
-      try {
-        client.dropTable("default", tableName = "temporary", ignoreIfNotExists = false,
-          purge = true)
-        assert(!versionsWithoutPurge.contains(version))
-      } catch {
-        case _: UnsupportedOperationException =>
-          assert(versionsWithoutPurge.contains(version))
-          client.dropTable("default", tableName = "temporary", ignoreIfNotExists = false,
-            purge = false)
-      }
+      client.dropTable("default", tableName = "temporary", ignoreIfNotExists = false)
       assert(client.listTables("default") === Seq("src"))
     }
 
@@ -281,7 +263,7 @@ class VersionsSuite extends SparkFunSuite with Logging {
       outputFormat = None,
       serde = None,
       compressed = false,
-      properties = Map.empty)
+      serdeProperties = Map.empty)
 
     test(s"$version: sql create partitioned table") {
       client.runSqlHive("CREATE TABLE src_part (value INT) PARTITIONED BY (key1 INT, key2 INT)")
@@ -372,10 +354,7 @@ class VersionsSuite extends SparkFunSuite with Logging {
     test(s"$version: alterPartitions") {
       val spec = Map("key1" -> "1", "key2" -> "2")
       val newLocation = Utils.createTempDir().getPath()
-      val storage = storageFormat.copy(
-        locationUri = Some(newLocation),
-        // needed for 0.12 alter partitions
-        serde = Some("org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe"))
+      val storage = storageFormat.copy(locationUri = Some(newLocation))
       val partition = CatalogTablePartition(spec, storage)
       client.alterPartitions("default", "src_part", Seq(partition))
       assert(client.getPartition("default", "src_part", spec)
@@ -384,20 +363,7 @@ class VersionsSuite extends SparkFunSuite with Logging {
 
     test(s"$version: dropPartitions") {
       val spec = Map("key1" -> "1", "key2" -> "3")
-      val versionsWithoutPurge = versions.takeWhile(_ != "1.2")
-      // Similar to dropTable; try with purge set, and if it fails, make sure we're running
-      // with a version that is older than the minimum (1.2 in this case).
-      try {
-        client.dropPartitions("default", "src_part", Seq(spec), ignoreIfNotExists = true,
-          purge = true)
-        assert(!versionsWithoutPurge.contains(version))
-      } catch {
-        case _: UnsupportedOperationException =>
-          assert(versionsWithoutPurge.contains(version))
-          client.dropPartitions("default", "src_part", Seq(spec), ignoreIfNotExists = true,
-            purge = false)
-      }
-
+      client.dropPartitions("default", "src_part", Seq(spec), ignoreIfNotExists = true)
       assert(client.getPartitionOption("default", "src_part", spec).isEmpty)
     }
 

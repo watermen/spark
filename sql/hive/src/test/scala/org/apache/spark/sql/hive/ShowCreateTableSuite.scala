@@ -28,11 +28,11 @@ class ShowCreateTableSuite extends QueryTest with SQLTestUtils with TestHiveSing
   import testImplicits._
 
   test("data source table with user specified schema") {
-    withTable("ddl_test") {
+    withTable("ddl_test1") {
       val jsonFilePath = Utils.getSparkClassLoader.getResource("sample.json").getFile
 
       sql(
-        s"""CREATE TABLE ddl_test (
+        s"""CREATE TABLE ddl_test1 (
            |  a STRING,
            |  b STRING,
            |  `extra col` ARRAY<INT>,
@@ -45,55 +45,55 @@ class ShowCreateTableSuite extends QueryTest with SQLTestUtils with TestHiveSing
          """.stripMargin
       )
 
-      checkCreateTable("ddl_test")
+      checkCreateTable("ddl_test1")
     }
   }
 
   test("data source table CTAS") {
-    withTable("ddl_test") {
+    withTable("ddl_test2") {
       sql(
-        s"""CREATE TABLE ddl_test
+        s"""CREATE TABLE ddl_test2
            |USING json
            |AS SELECT 1 AS a, "foo" AS b
          """.stripMargin
       )
 
-      checkCreateTable("ddl_test")
+      checkCreateTable("ddl_test2")
     }
   }
 
   test("partitioned data source table") {
-    withTable("ddl_test") {
+    withTable("ddl_test3") {
       sql(
-        s"""CREATE TABLE ddl_test
+        s"""CREATE TABLE ddl_test3
            |USING json
            |PARTITIONED BY (b)
            |AS SELECT 1 AS a, "foo" AS b
          """.stripMargin
       )
 
-      checkCreateTable("ddl_test")
+      checkCreateTable("ddl_test3")
     }
   }
 
   test("bucketed data source table") {
-    withTable("ddl_test") {
+    withTable("ddl_test3") {
       sql(
-        s"""CREATE TABLE ddl_test
+        s"""CREATE TABLE ddl_test3
            |USING json
            |CLUSTERED BY (a) SORTED BY (b) INTO 2 BUCKETS
            |AS SELECT 1 AS a, "foo" AS b
          """.stripMargin
       )
 
-      checkCreateTable("ddl_test")
+      checkCreateTable("ddl_test3")
     }
   }
 
   test("partitioned bucketed data source table") {
-    withTable("ddl_test") {
+    withTable("ddl_test4") {
       sql(
-        s"""CREATE TABLE ddl_test
+        s"""CREATE TABLE ddl_test4
            |USING json
            |PARTITIONED BY (c)
            |CLUSTERED BY (a) SORTED BY (b) INTO 2 BUCKETS
@@ -101,12 +101,12 @@ class ShowCreateTableSuite extends QueryTest with SQLTestUtils with TestHiveSing
          """.stripMargin
       )
 
-      checkCreateTable("ddl_test")
+      checkCreateTable("ddl_test4")
     }
   }
 
   test("data source table using Dataset API") {
-    withTable("ddl_test") {
+    withTable("ddl_test5") {
       spark
         .range(3)
         .select('id as 'a, 'id as 'b, 'id as 'c, 'id as 'd, 'id as 'e)
@@ -114,9 +114,9 @@ class ShowCreateTableSuite extends QueryTest with SQLTestUtils with TestHiveSing
         .mode("overwrite")
         .partitionBy("a", "b")
         .bucketBy(2, "c", "d")
-        .saveAsTable("ddl_test")
+        .saveAsTable("ddl_test5")
 
-      checkCreateTable("ddl_test")
+      checkCreateTable("ddl_test5")
     }
   }
 
@@ -266,7 +266,7 @@ class ShowCreateTableSuite extends QueryTest with SQLTestUtils with TestHiveSing
   }
 
   private def createRawHiveTable(ddl: String): Unit = {
-    hiveContext.sharedState.externalCatalog.asInstanceOf[HiveExternalCatalog].client.runSqlHive(ddl)
+    hiveContext.sharedState.metadataHive.runSqlHive(ddl)
   }
 
   private def checkCreateTable(table: String): Unit = {
@@ -279,13 +279,13 @@ class ShowCreateTableSuite extends QueryTest with SQLTestUtils with TestHiveSing
 
   private def checkCreateTableOrView(table: TableIdentifier, checkType: String): Unit = {
     val db = table.database.getOrElse("default")
-    val expected = spark.sharedState.externalCatalog.getTable(db, table.table)
+    val expected = spark.externalCatalog.getTable(db, table.table)
     val shownDDL = sql(s"SHOW CREATE TABLE ${table.quotedString}").head().getString(0)
     sql(s"DROP $checkType ${table.quotedString}")
 
     try {
       sql(shownDDL)
-      val actual = spark.sharedState.externalCatalog.getTable(db, table.table)
+      val actual = spark.externalCatalog.getTable(db, table.table)
       checkCatalogTables(expected, actual)
     } finally {
       sql(s"DROP $checkType IF EXISTS ${table.table}")

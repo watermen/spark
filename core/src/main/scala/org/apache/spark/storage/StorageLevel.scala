@@ -120,14 +120,8 @@ class StorageLevel private(
   private def readResolve(): Object = StorageLevel.getCachedStorageLevel(this)
 
   override def toString: String = {
-    val disk = if (useDisk) "disk" else ""
-    val memory = if (useMemory) "memory" else ""
-    val heap = if (useOffHeap) "offheap" else ""
-    val deserialize = if (deserialized) "deserialized" else ""
-
-    val output =
-      Seq(disk, memory, heap, deserialize, s"$replication replicas").filter(_.nonEmpty)
-    s"StorageLevel(${output.mkString(", ")})"
+    s"StorageLevel(disk=$useDisk, memory=$useMemory, offheap=$useOffHeap, " +
+      s"deserialized=$deserialized, replication=$replication)"
   }
 
   override def hashCode(): Int = toInt * 41 + replication

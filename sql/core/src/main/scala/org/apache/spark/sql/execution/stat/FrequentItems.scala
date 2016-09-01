@@ -24,7 +24,7 @@ import org.apache.spark.sql.{Column, DataFrame, Dataset, Row}
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.types._
 
-object FrequentItems extends Logging {
+private[sql] object FrequentItems extends Logging {
 
   /** A helper class wrapping `MutableMap[Any, Long]` for simplicity. */
   private class FreqItemCounter(size: Int) extends Serializable {
@@ -40,7 +40,7 @@ object FrequentItems extends Logging {
         if (baseMap.size < size) {
           baseMap += key -> count
         } else {
-          val minCount = if (baseMap.values.isEmpty) 0 else baseMap.values.min
+          val minCount = baseMap.values.min
           val remainder = count - minCount
           if (remainder >= 0) {
             baseMap += key -> count // something will get kicked out, so we can add this
@@ -79,11 +79,11 @@ object FrequentItems extends Logging {
    *                than 1e-4.
    * @return A Local DataFrame with the Array of frequent items for each column.
    */
-  def singlePassFreqItems(
+  private[sql] def singlePassFreqItems(
       df: DataFrame,
       cols: Seq[String],
       support: Double): DataFrame = {
-    require(support >= 1e-4 && support <= 1.0, s"Support must be in [1e-4, 1], but got $support.")
+    require(support >= 1e-4, s"support ($support) must be greater than 1e-4.")
     val numCols = cols.length
     // number of max items to keep counts for
     val sizeOfMap = (1 / support).toInt

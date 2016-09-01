@@ -37,7 +37,7 @@ private[sql] object InferSchema {
    */
   def infer(
       json: RDD[String],
-      columnNameOfCorruptRecord: String,
+      columnNameOfCorruptRecords: String,
       configOptions: JSONOptions): StructType = {
     require(configOptions.samplingRatio > 0,
       s"samplingRatio (${configOptions.samplingRatio}) should be greater than 0")
@@ -60,13 +60,13 @@ private[sql] object InferSchema {
           }
         } catch {
           case _: JsonParseException if shouldHandleCorruptRecord =>
-            Some(StructType(Seq(StructField(columnNameOfCorruptRecord, StringType))))
+            Some(StructType(Seq(StructField(columnNameOfCorruptRecords, StringType))))
           case _: JsonParseException =>
             None
         }
       }
     }.fold(StructType(Seq()))(
-      compatibleRootType(columnNameOfCorruptRecord, shouldHandleCorruptRecord))
+      compatibleRootType(columnNameOfCorruptRecords, shouldHandleCorruptRecord))
 
     canonicalizeType(rootType) match {
       case Some(st: StructType) => st

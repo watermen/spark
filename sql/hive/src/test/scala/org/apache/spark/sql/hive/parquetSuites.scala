@@ -57,7 +57,7 @@ case class ParquetDataWithKeyAndComplexTypes(
  */
 class ParquetMetastoreSuite extends ParquetPartitioningTest {
   import hiveContext._
-  import spark.implicits._
+  import hiveContext.implicits._
 
   override def beforeAll(): Unit = {
     super.beforeAll()
@@ -389,18 +389,17 @@ class ParquetMetastoreSuite extends ParquetPartitioningTest {
   test("SPARK-7749: non-partitioned metastore Parquet table lookup should use cached relation") {
     withTable("nonPartitioned") {
       sql(
-        """
-          |CREATE TABLE nonPartitioned (
-          |  key INT,
-          |  value STRING
-          |)
-          |STORED AS PARQUET
-        """.stripMargin)
+        s"""CREATE TABLE nonPartitioned (
+           |  key INT,
+           |  value STRING
+           |)
+           |STORED AS PARQUET
+         """.stripMargin)
 
       // First lookup fills the cache
-      val r1 = collectHadoopFsRelation(table("nonPartitioned"))
+      val r1 = collectHadoopFsRelation (table("nonPartitioned"))
       // Second lookup should reuse the cache
-      val r2 = collectHadoopFsRelation(table("nonPartitioned"))
+      val r2 = collectHadoopFsRelation (table("nonPartitioned"))
       // They should be the same instance
       assert(r1 eq r2)
     }
@@ -409,42 +408,18 @@ class ParquetMetastoreSuite extends ParquetPartitioningTest {
   test("SPARK-7749: partitioned metastore Parquet table lookup should use cached relation") {
     withTable("partitioned") {
       sql(
-        """
-          |CREATE TABLE partitioned (
-          |  key INT,
-          |  value STRING
-          |)
-          |PARTITIONED BY (part INT)
-          |STORED AS PARQUET
-        """.stripMargin)
+        s"""CREATE TABLE partitioned (
+           | key INT,
+           | value STRING
+           |)
+           |PARTITIONED BY (part INT)
+           |STORED AS PARQUET
+       """.stripMargin)
 
       // First lookup fills the cache
-      val r1 = collectHadoopFsRelation(table("partitioned"))
+      val r1 = collectHadoopFsRelation (table("partitioned"))
       // Second lookup should reuse the cache
-      val r2 = collectHadoopFsRelation(table("partitioned"))
-      // They should be the same instance
-      assert(r1 eq r2)
-    }
-  }
-
-  test("SPARK-15968: nonempty partitioned metastore Parquet table lookup should use cached " +
-      "relation") {
-    withTable("partitioned") {
-      sql(
-        """
-          |CREATE TABLE partitioned (
-          |  key INT,
-          |  value STRING
-          |)
-          |PARTITIONED BY (part INT)
-          |STORED AS PARQUET
-        """.stripMargin)
-      sql("INSERT INTO TABLE partitioned PARTITION(part=0) SELECT 1 as key, 'one' as value")
-
-      // First lookup fills the cache
-      val r1 = collectHadoopFsRelation(table("partitioned"))
-      // Second lookup should reuse the cache
-      val r2 = collectHadoopFsRelation(table("partitioned"))
+      val r2 = collectHadoopFsRelation (table("partitioned"))
       // They should be the same instance
       assert(r1 eq r2)
     }
@@ -487,7 +462,7 @@ class ParquetMetastoreSuite extends ParquetPartitioningTest {
     checkCached(tableIdentifier)
     // For insert into non-partitioned table, we will do the conversion,
     // so the converted test_insert_parquet should be cached.
-    sessionState.refreshTable("test_insert_parquet")
+    sessionState.invalidateTable("test_insert_parquet")
     assert(sessionState.catalog.getCachedDataSourceTable(tableIdentifier) === null)
     sql(
       """
@@ -500,7 +475,7 @@ class ParquetMetastoreSuite extends ParquetPartitioningTest {
       sql("select * from test_insert_parquet"),
       sql("select a, b from jt").collect())
     // Invalidate the cache.
-    sessionState.refreshTable("test_insert_parquet")
+    sessionState.invalidateTable("test_insert_parquet")
     assert(sessionState.catalog.getCachedDataSourceTable(tableIdentifier) === null)
 
     // Create a partitioned table.
@@ -550,7 +525,7 @@ class ParquetMetastoreSuite extends ParquetPartitioningTest {
           |select b, '2015-04-02', a FROM jt
         """.stripMargin).collect())
 
-    sessionState.refreshTable("test_parquet_partitioned_cache_test")
+    sessionState.invalidateTable("test_parquet_partitioned_cache_test")
     assert(sessionState.catalog.getCachedDataSourceTable(tableIdentifier) === null)
 
     dropTables("test_insert_parquet", "test_parquet_partitioned_cache_test")
@@ -582,19 +557,12 @@ class ParquetMetastoreSuite extends ParquetPartitioningTest {
           Seq(("foo", 0), ("bar", 0)).toDF("a", "b"))
 
         // Add data files to partition directory and check whether they can be read
-        sql("INSERT INTO TABLE test_added_partitions PARTITION (b=1) select 'baz' as a")
+        Seq("baz").toDF("a").write.mode(SaveMode.Overwrite).parquet(partitionDir)
         checkAnswer(
           sql("SELECT * FROM test_added_partitions"),
           Seq(("foo", 0), ("bar", 0), ("baz", 1)).toDF("a", "b"))
       }
     }
-  }
-
-  test("self-join") {
-    val table = spark.table("normal_parquet")
-    val selfJoin = table.as("t1").join(table.as("t2"))
-    checkAnswer(selfJoin,
-      sql("SELECT * FROM normal_parquet x JOIN normal_parquet y"))
   }
 }
 
@@ -603,7 +571,7 @@ class ParquetMetastoreSuite extends ParquetPartitioningTest {
  */
 class ParquetSourceSuite extends ParquetPartitioningTest {
   import testImplicits._
-  import spark._
+  import hiveContext._
 
   override def beforeAll(): Unit = {
     super.beforeAll()
@@ -614,7 +582,7 @@ class ParquetSourceSuite extends ParquetPartitioningTest {
       "normal_parquet")
 
     sql( s"""
-      CREATE TEMPORARY VIEW partitioned_parquet
+      create temporary table partitioned_parquet
       USING org.apache.spark.sql.parquet
       OPTIONS (
         path '${partitionedTableDir.getCanonicalPath}'
@@ -622,7 +590,7 @@ class ParquetSourceSuite extends ParquetPartitioningTest {
     """)
 
     sql( s"""
-      CREATE TEMPORARY VIEW partitioned_parquet_with_key
+      create temporary table partitioned_parquet_with_key
       USING org.apache.spark.sql.parquet
       OPTIONS (
         path '${partitionedTableDirWithKey.getCanonicalPath}'
@@ -630,7 +598,7 @@ class ParquetSourceSuite extends ParquetPartitioningTest {
     """)
 
     sql( s"""
-      CREATE TEMPORARY VIEW normal_parquet
+      create temporary table normal_parquet
       USING org.apache.spark.sql.parquet
       OPTIONS (
         path '${new File(partitionedTableDir, "p=1").getCanonicalPath}'
@@ -638,7 +606,7 @@ class ParquetSourceSuite extends ParquetPartitioningTest {
     """)
 
     sql( s"""
-      CREATE TEMPORARY VIEW partitioned_parquet_with_key_and_complextypes
+      CREATE TEMPORARY TABLE partitioned_parquet_with_key_and_complextypes
       USING org.apache.spark.sql.parquet
       OPTIONS (
         path '${partitionedTableDirWithKeyAndComplexTypes.getCanonicalPath}'
@@ -646,7 +614,7 @@ class ParquetSourceSuite extends ParquetPartitioningTest {
     """)
 
     sql( s"""
-      CREATE TEMPORARY VIEW partitioned_parquet_with_complextypes
+      CREATE TEMPORARY TABLE partitioned_parquet_with_complextypes
       USING org.apache.spark.sql.parquet
       OPTIONS (
         path '${partitionedTableDirWithComplexTypes.getCanonicalPath}'
@@ -703,46 +671,6 @@ class ParquetSourceSuite extends ParquetPartitioningTest {
           checkAnswer(
             spark.read.parquet(path),
             Row("1st", "2nd", Seq(Row("val_a", "val_b"))))
-        }
-      }
-    }
-  }
-
-  test("Verify the PARQUET conversion parameter: CONVERT_METASTORE_PARQUET") {
-    withTempView("single") {
-      val singleRowDF = Seq((0, "foo")).toDF("key", "value")
-      singleRowDF.createOrReplaceTempView("single")
-
-      Seq("true", "false").foreach { parquetConversion =>
-        withSQLConf(HiveUtils.CONVERT_METASTORE_PARQUET.key -> parquetConversion) {
-          val tableName = "test_parquet_ctas"
-          withTable(tableName) {
-            sql(
-              s"""
-                 |CREATE TABLE $tableName STORED AS PARQUET
-                 |AS SELECT tmp.key, tmp.value FROM single tmp
-               """.stripMargin)
-
-            val df = spark.sql(s"SELECT * FROM $tableName WHERE key=0")
-            checkAnswer(df, singleRowDF)
-
-            val queryExecution = df.queryExecution
-            if (parquetConversion == "true") {
-              queryExecution.analyzed.collectFirst {
-                case _: LogicalRelation =>
-              }.getOrElse {
-                fail(s"Expecting the query plan to convert parquet to data sources, " +
-                  s"but got:\n$queryExecution")
-              }
-            } else {
-              queryExecution.analyzed.collectFirst {
-                case _: MetastoreRelation =>
-              }.getOrElse {
-                fail(s"Expecting no conversion from parquet to data sources, " +
-                  s"but got:\n$queryExecution")
-              }
-            }
-          }
         }
       }
     }

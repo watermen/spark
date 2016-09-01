@@ -30,7 +30,7 @@ import org.apache.spark.sql.types._
 class OrcHadoopFsRelationSuite extends HadoopFsRelationTest {
   import testImplicits._
 
-  override val dataSourceName: String = classOf[OrcFileFormat].getCanonicalName
+  override val dataSourceName: String = classOf[DefaultSource].getCanonicalName
 
   // ORC does not play well with NullType and UDT.
   override protected def supportsDataType(dataType: DataType): Boolean = dataType match {
@@ -59,7 +59,7 @@ class OrcHadoopFsRelationSuite extends HadoopFsRelationTest {
         StructType(dataSchema.fields :+ StructField("p1", IntegerType, nullable = true))
 
       checkQueries(
-        spark.read.options(Map(
+        hiveContext.read.options(Map(
           "path" -> file.getCanonicalPath,
           "dataSchema" -> dataSchemaWithPartition.json)).format(dataSourceName).load())
     }

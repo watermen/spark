@@ -71,11 +71,11 @@ public class JavaOneVsRestExample {
 
     // obtain evaluator.
     MulticlassClassificationEvaluator evaluator = new MulticlassClassificationEvaluator()
-            .setMetricName("accuracy");
+            .setMetricName("precision");
 
     // compute the classification error on test data.
-    double accuracy = evaluator.evaluate(predictions);
-    System.out.println("Test Error = " + (1 - accuracy));
+    double precision = evaluator.evaluate(predictions);
+    System.out.println("Test Error : " + (1 - precision));
     // $example off$
 
     spark.stop();

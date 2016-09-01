@@ -20,7 +20,7 @@ from __future__ import print_function
 from pyspark.sql import SparkSession
 # $example on$
 from pyspark.ml.feature import ChiSqSelector
-from pyspark.ml.linalg import Vectors
+from pyspark.mllib.linalg import Vectors
 # $example off$
 
 if __name__ == "__main__":
@@ -39,8 +39,6 @@ if __name__ == "__main__":
                              outputCol="selectedFeatures", labelCol="clicked")
 
     result = selector.fit(df).transform(df)
-
-    print("ChiSqSelector output with top %d features selected" % selector.getNumTopFeatures())
     result.show()
     # $example off$
 

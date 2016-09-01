@@ -201,10 +201,10 @@ class SparkILoop(
       if (Utils.isWindows) {
         // Strip any URI scheme prefix so we can add the correct path to the classpath
         // e.g. file:/C:/my/path.jar -> C:/my/path.jar
-        getAddedJars().map { jar => new URI(jar).getPath.stripPrefix("/") }
+        SparkILoop.getAddedJars.map { jar => new URI(jar).getPath.stripPrefix("/") }
       } else {
         // We need new URI(jar).getPath here for the case that `jar` includes encoded white space (%20).
-        getAddedJars().map { jar => new URI(jar).getPath }
+        SparkILoop.getAddedJars.map { jar => new URI(jar).getPath }
       }
     // work around for Scala bug
     val totalClassPath = addedJars.foldLeft(
@@ -943,6 +943,8 @@ class SparkILoop(
       })
 
   private def process(settings: Settings): Boolean = savingContextLoader {
+    if (getMaster() == "yarn-client") System.setProperty("SPARK_YARN_MODE", "true")
+
     this.settings = settings
     createInterpreter()
 
@@ -1003,7 +1005,7 @@ class SparkILoop(
   @DeveloperApi
   def createSparkSession(): SparkSession = {
     val execUri = System.getenv("SPARK_EXECUTOR_URI")
-    val jars = getAddedJars()
+    val jars = SparkILoop.getAddedJars
     val conf = new SparkConf()
       .setMaster(getMaster())
       .setJars(jars)
@@ -1058,30 +1060,21 @@ class SparkILoop(
 
   @deprecated("Use `process` instead", "2.9.0")
   private def main(settings: Settings): Unit = process(settings)
-
-  @DeveloperApi
-  def getAddedJars(): Array[String] = {
-    val conf = new SparkConf().setMaster(getMaster())
-    val envJars = sys.env.get("ADD_JARS")
-    if (envJars.isDefined) {
-      logWarning("ADD_JARS environment variable is deprecated, use --jar spark submit argument instead")
-    }
-    val jars = {
-      val userJars = Utils.getUserJars(conf, isShell = true)
-      if (userJars.isEmpty) {
-        envJars.getOrElse("")
-      } else {
-        userJars.mkString(",")
-      }
-    }
-    Utils.resolveURIs(jars).split(",").filter(_.nonEmpty)
-  }
-
 }
 
 object SparkILoop extends Logging {
   implicit def loopToInterpreter(repl: SparkILoop): SparkIMain = repl.intp
   private def echo(msg: String) = Console println msg
+
+  def getAddedJars: Array[String] = {
+    val envJars = sys.env.get("ADD_JARS")
+    if (envJars.isDefined) {
+      logWarning("ADD_JARS environment variable is deprecated, use --jar spark submit argument instead")
+    }
+    val propJars = sys.props.get("spark.jars").flatMap { p => if (p == "") None else Some(p) }
+    val jars = propJars.orElse(envJars).getOrElse("")
+    Utils.resolveURIs(jars).split(",").filter(_.nonEmpty)
+  }
 
   // Designed primarily for use by test code: take a String with a
   // bunch of code, and prints out a transcript of what it would look
@@ -1116,7 +1109,7 @@ object SparkILoop extends Logging {
         if (settings.classpath.isDefault)
           settings.classpath.value = sys.props("java.class.path")
 
-        repl.getAddedJars().map(jar => new URI(jar).getPath).foreach(settings.classpath.append(_))
+        getAddedJars.map(jar => new URI(jar).getPath).foreach(settings.classpath.append(_))
 
         repl process settings
       }

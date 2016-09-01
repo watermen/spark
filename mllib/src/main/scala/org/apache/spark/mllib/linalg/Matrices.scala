@@ -75,7 +75,7 @@ sealed trait Matrix extends Serializable {
   def rowIter: Iterator[Vector] = this.transpose.colIter
 
   /** Converts to a breeze matrix. */
-  private[mllib] def asBreeze: BM[Double]
+  private[mllib] def toBreeze: BM[Double]
 
   /** Gets the (i, j)-th element. */
   @Since("1.3.0")
@@ -118,11 +118,11 @@ sealed trait Matrix extends Serializable {
   }
 
   /** A human readable representation of the matrix */
-  override def toString: String = asBreeze.toString()
+  override def toString: String = toBreeze.toString()
 
   /** A human readable representation of the matrix with maximum lines and width */
   @Since("1.4.0")
-  def toString(maxLines: Int, maxLineWidth: Int): String = asBreeze.toString(maxLines, maxLineWidth)
+  def toString(maxLines: Int, maxLineWidth: Int): String = toBreeze.toString(maxLines, maxLineWidth)
 
   /**
    * Map the values of this matrix using a function. Generates a new matrix. Performs the
@@ -300,7 +300,7 @@ class DenseMatrix @Since("1.3.0") (
     this(numRows, numCols, values, false)
 
   override def equals(o: Any): Boolean = o match {
-    case m: Matrix => asBreeze == m.asBreeze
+    case m: Matrix => toBreeze == m.toBreeze
     case _ => false
   }
 
@@ -308,7 +308,7 @@ class DenseMatrix @Since("1.3.0") (
     com.google.common.base.Objects.hashCode(numRows: Integer, numCols: Integer, toArray)
   }
 
-  private[mllib] def asBreeze: BM[Double] = {
+  private[mllib] def toBreeze: BM[Double] = {
     if (!isTransposed) {
       new BDM[Double](numRows, numCols, values)
     } else {
@@ -572,13 +572,10 @@ class SparseMatrix @Since("1.3.0") (
 
   require(values.length == rowIndices.length, "The number of row indices and values don't match! " +
     s"values.length: ${values.length}, rowIndices.length: ${rowIndices.length}")
-  if (isTransposed) {
-    require(colPtrs.length == numRows + 1,
-      s"Expecting ${numRows + 1} colPtrs when numRows = $numRows but got ${colPtrs.length}")
-  } else {
-    require(colPtrs.length == numCols + 1,
-      s"Expecting ${numCols + 1} colPtrs when numCols = $numCols but got ${colPtrs.length}")
-  }
+  // The Or statement is for the case when the matrix is transposed
+  require(colPtrs.length == numCols + 1 || colPtrs.length == numRows + 1, "The length of the " +
+    "column indices should be the number of columns + 1. Currently, colPointers.length: " +
+    s"${colPtrs.length}, numCols: $numCols")
   require(values.length == colPtrs.last, "The last value of colPtrs must equal the number of " +
     s"elements. values.length: ${values.length}, colPtrs.last: ${colPtrs.last}")
 
@@ -610,13 +607,13 @@ class SparseMatrix @Since("1.3.0") (
       values: Array[Double]) = this(numRows, numCols, colPtrs, rowIndices, values, false)
 
   override def equals(o: Any): Boolean = o match {
-    case m: Matrix => asBreeze == m.asBreeze
+    case m: Matrix => toBreeze == m.toBreeze
     case _ => false
   }
 
-  override def hashCode(): Int = asBreeze.hashCode
+  override def hashCode(): Int = toBreeze.hashCode
 
-  private[mllib] def asBreeze: BM[Double] = {
+  private[mllib] def toBreeze: BM[Double] = {
      if (!isTransposed) {
        new BSM[Double](values, numRows, numCols, colPtrs, rowIndices)
      } else {

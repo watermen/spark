@@ -70,7 +70,6 @@ import org.apache.spark.partial.PartialResult;
 import org.apache.spark.rdd.RDD;
 import org.apache.spark.serializer.KryoSerializer;
 import org.apache.spark.storage.StorageLevel;
-import org.apache.spark.util.LongAccumulator;
 import org.apache.spark.util.StatCounter;
 
 // The test suite itself is Serializable so that anonymous Function implementations can be
@@ -288,7 +287,7 @@ public class JavaAPISuite implements Serializable {
 
   @Test
   public void foreach() {
-    final LongAccumulator accum = sc.sc().longAccumulator();
+    final Accumulator<Integer> accum = sc.accumulator(0);
     JavaRDD<String> rdd = sc.parallelize(Arrays.asList("Hello", "World"));
     rdd.foreach(new VoidFunction<String>() {
       @Override
@@ -301,7 +300,7 @@ public class JavaAPISuite implements Serializable {
 
   @Test
   public void foreachPartition() {
-    final LongAccumulator accum = sc.sc().longAccumulator();
+    final Accumulator<Integer> accum = sc.accumulator(0);
     JavaRDD<String> rdd = sc.parallelize(Arrays.asList("Hello", "World"));
     rdd.foreachPartition(new VoidFunction<Iterator<String>>() {
       @Override
@@ -733,10 +732,8 @@ public class JavaAPISuite implements Serializable {
     assertEquals(20/6.0, rdd.mean(), 0.01);
     assertEquals(20/6.0, rdd.mean(), 0.01);
     assertEquals(6.22222, rdd.variance(), 0.01);
-    assertEquals(rdd.variance(), rdd.popVariance(), 1e-14);
     assertEquals(7.46667, rdd.sampleVariance(), 0.01);
     assertEquals(2.49444, rdd.stdev(), 0.01);
-    assertEquals(rdd.stdev(), rdd.popStdev(), 1e-14);
     assertEquals(2.73252, rdd.sampleStdev(), 0.01);
 
     rdd.first();
@@ -1380,7 +1377,6 @@ public class JavaAPISuite implements Serializable {
     assertEquals("[3, 2, 3, 2]", sizes.collect().toString());
   }
 
-  @SuppressWarnings("deprecation")
   @Test
   public void accumulators() {
     JavaRDD<Integer> rdd = sc.parallelize(Arrays.asList(1, 2, 3, 4, 5));

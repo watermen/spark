@@ -23,14 +23,18 @@ import org.apache.spark.ml.util.{DefaultReadWriteTest, MLTestingUtils}
 import org.apache.spark.ml.util.TestingUtils._
 import org.apache.spark.mllib.feature
 import org.apache.spark.mllib.util.MLlibTestSparkContext
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.{Row, SparkSession}
 
 class ChiSqSelectorSuite extends SparkFunSuite with MLlibTestSparkContext
   with DefaultReadWriteTest {
 
   test("Test Chi-Square selector") {
-    val spark = this.spark
+    val spark = SparkSession.builder
+      .master("local[2]")
+      .appName("ChiSqSelectorSuite")
+      .getOrCreate()
     import spark.implicits._
+
     val data = Seq(
       LabeledPoint(0.0, Vectors.sparse(3, Array((0, 8.0), (1, 7.0)))),
       LabeledPoint(1.0, Vectors.sparse(3, Array((1, 9.0), (2, 6.0)))),

@@ -17,7 +17,7 @@
 
 # For this example, we shall use the "flights" dataset
 # The dataset consists of every flight departing Houston in 2011.
-# The data set is made up of 227,496 rows x 14 columns.
+# The data set is made up of 227,496 rows x 14 columns. 
 
 # To run this example use
 # ./bin/spark-submit examples/src/main/r/data-manipulation.R <path_to_csv>
@@ -33,8 +33,11 @@ if (length(args) != 1) {
   q("no")
 }
 
-## Initialize SparkSession
-sparkR.session(appName = "SparkR-data-manipulation-example")
+## Initialize SparkContext
+sc <- sparkR.init(appName = "SparkR-data-manipulation-example")
+
+## Initialize SQLContext
+sqlContext <- sparkRSQL.init(sc)
 
 flightsCsvPath <- args[[1]]
 
@@ -43,13 +46,13 @@ flights_df <- read.csv(flightsCsvPath, header = TRUE)
 flights_df$date <- as.Date(flights_df$date)
 
 ## Filter flights whose destination is San Francisco and write to a local data frame
-SFO_df <- flights_df[flights_df$dest == "SFO", ]
+SFO_df <- flights_df[flights_df$dest == "SFO", ] 
 
 # Convert the local data frame into a SparkDataFrame
-SFO_DF <- createDataFrame(SFO_df)
+SFO_DF <- createDataFrame(sqlContext, SFO_df)
 
 #  Directly create a SparkDataFrame from the source data
-flightsDF <- read.df(flightsCsvPath, source = "csv", header = "true")
+flightsDF <- read.df(sqlContext, flightsCsvPath, source = "csv", header = "true")
 
 # Print the schema of this SparkDataFrame
 printSchema(flightsDF)
@@ -72,8 +75,8 @@ destDF <- select(flightsDF, "dest", "cancelled")
 
 # Using SQL to select columns of data
 # First, register the flights SparkDataFrame as a table
-createOrReplaceTempView(flightsDF, "flightsTable")
-destDF <- sql("SELECT dest, cancelled FROM flightsTable")
+registerTempTable(flightsDF, "flightsTable")
+destDF <- sql(sqlContext, "SELECT dest, cancelled FROM flightsTable")
 
 # Use collect to create a local R data frame
 local_df <- collect(destDF)
@@ -99,5 +102,5 @@ if("magrittr" %in% rownames(installed.packages())) {
   head(dailyDelayDF)
 }
 
-# Stop the SparkSession now
-sparkR.session.stop()
+# Stop the SparkContext now
+sparkR.stop()

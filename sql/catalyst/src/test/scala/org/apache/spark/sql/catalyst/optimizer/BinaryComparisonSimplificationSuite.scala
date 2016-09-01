@@ -36,7 +36,7 @@ class BinaryComparisonSimplificationSuite extends PlanTest with PredicateHelper 
         NullPropagation,
         ConstantFolding,
         BooleanSimplification,
-        SimplifyBinaryComparison,
+        BinaryComparisonSimplification,
         PruneFilters) :: Nil
   }
 

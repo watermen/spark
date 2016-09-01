@@ -232,11 +232,7 @@ private object TorrentBroadcast extends Logging {
     val out = compressionCodec.map(c => c.compressedOutputStream(cbbos)).getOrElse(cbbos)
     val ser = serializer.newInstance()
     val serOut = ser.serializeStream(out)
-    Utils.tryWithSafeFinally {
-      serOut.writeObject[T](obj)
-    } {
-      serOut.close()
-    }
+    serOut.writeObject[T](obj).close()
     cbbos.toChunkedByteBuffer.getChunks()
   }
 
@@ -250,11 +246,8 @@ private object TorrentBroadcast extends Logging {
     val in: InputStream = compressionCodec.map(c => c.compressedInputStream(is)).getOrElse(is)
     val ser = serializer.newInstance()
     val serIn = ser.deserializeStream(in)
-    val obj = Utils.tryWithSafeFinally {
-      serIn.readObject[T]()
-    } {
-      serIn.close()
-    }
+    val obj = serIn.readObject[T]()
+    serIn.close()
     obj
   }
 

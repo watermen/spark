@@ -17,7 +17,7 @@
 
 package org.apache.spark.mllib.impl
 
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.{SparkContext, SparkFunSuite}
 import org.apache.spark.graphx.{Edge, Graph}
@@ -140,11 +140,9 @@ private object PeriodicGraphCheckpointerSuite {
     //       Instead, we check for the presence of the checkpoint files.
     //       This test should continue to work even after this graph.isCheckpointed issue
     //       is fixed (though it can then be simplified and not look for the files).
-    val hadoopConf = graph.vertices.sparkContext.hadoopConfiguration
+    val fs = FileSystem.get(graph.vertices.sparkContext.hadoopConfiguration)
     graph.getCheckpointFiles.foreach { checkpointFile =>
-      val path = new Path(checkpointFile)
-      val fs = path.getFileSystem(hadoopConf)
-      assert(!fs.exists(path),
+      assert(!fs.exists(new Path(checkpointFile)),
         "Graph checkpoint file should have been removed")
     }
   }

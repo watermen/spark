@@ -27,7 +27,6 @@ import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, InterpretedOrdering}
 import org.apache.spark.sql.catalyst.parser.{CatalystSqlParser, LegacyTypeStringParser}
 import org.apache.spark.sql.catalyst.util.quoteIdentifier
-import org.apache.spark.util.Utils
 
 /**
  * :: DeveloperApi ::
@@ -113,8 +112,7 @@ case class StructType(fields: Array[StructField]) extends DataType with Seq[Stru
     }
   }
 
-  private lazy val _hashCode: Int = java.util.Arrays.hashCode(fields.asInstanceOf[Array[AnyRef]])
-  override def hashCode(): Int = _hashCode
+  override def hashCode(): Int = java.util.Arrays.hashCode(fields.asInstanceOf[Array[AnyRef]])
 
   /**
    * Creates a new [[StructType]] by adding a new field.
@@ -171,23 +169,6 @@ case class StructType(fields: Array[StructField]) extends DataType with Seq[Stru
   }
 
   /**
-   * Creates a new [[StructType]] by adding a new field and specifying metadata.
-   * {{{
-   * val struct = (new StructType)
-   *   .add("a", IntegerType, true, "comment1")
-   *   .add("b", LongType, false, "comment2")
-   *   .add("c", StringType, true, "comment3")
-   * }}}
-   */
-  def add(
-      name: String,
-      dataType: DataType,
-      nullable: Boolean,
-      comment: String): StructType = {
-    StructType(fields :+ StructField(name, dataType, nullable).withComment(comment))
-  }
-
-  /**
    * Creates a new [[StructType]] by adding a new nullable field with no metadata where the
    * dataType is specified as a String.
    *
@@ -233,24 +214,6 @@ case class StructType(fields: Array[StructField]) extends DataType with Seq[Stru
       nullable: Boolean,
       metadata: Metadata): StructType = {
     add(name, CatalystSqlParser.parseDataType(dataType), nullable, metadata)
-  }
-
-  /**
-   * Creates a new [[StructType]] by adding a new field and specifying metadata where the
-   * dataType is specified as a String.
-   * {{{
-   * val struct = (new StructType)
-   *   .add("a", "int", true, "comment1")
-   *   .add("b", "long", false, "comment2")
-   *   .add("c", "string", true, "comment3")
-   * }}}
-   */
-  def add(
-      name: String,
-      dataType: String,
-      nullable: Boolean,
-      comment: String): StructType = {
-    add(name, CatalystSqlParser.parseDataType(dataType), nullable, comment)
   }
 
   /**
@@ -329,13 +292,7 @@ case class StructType(fields: Array[StructField]) extends DataType with Seq[Stru
   override def defaultSize: Int = fields.map(_.dataType.defaultSize).sum
 
   override def simpleString: String = {
-    val fieldTypes = fields.view.map(field => s"${field.name}:${field.dataType.simpleString}")
-    Utils.truncatedString(fieldTypes, "struct<", ",", ">")
-  }
-
-  override def catalogString: String = {
-    // in catalogString, we should not truncate
-    val fieldTypes = fields.map(field => s"${field.name}:${field.dataType.catalogString}")
+    val fieldTypes = fields.map(field => s"${field.name}:${field.dataType.simpleString}")
     s"struct<${fieldTypes.mkString(",")}>"
   }
 
@@ -395,11 +352,6 @@ case class StructType(fields: Array[StructField]) extends DataType with Seq[Stru
 
 object StructType extends AbstractDataType {
 
-  /**
-   * A key used in field metadata to indicate that the field comes from the result of merging
-   * two different StructTypes that do not always contain the field. That is to say, the field
-   * might be missing (optional) from one of the StructTypes.
-   */
   private[sql] val metadataKeyForOptionalField = "_OPTIONAL_"
 
   override private[sql] def defaultConcreteType: DataType = new StructType
@@ -424,10 +376,10 @@ object StructType extends AbstractDataType {
     StructType(fields.asScala)
   }
 
-  private[sql] def fromAttributes(attributes: Seq[Attribute]): StructType =
+  protected[sql] def fromAttributes(attributes: Seq[Attribute]): StructType =
     StructType(attributes.map(a => StructField(a.name, a.dataType, a.nullable, a.metadata)))
 
-  private[sql] def removeMetadata(key: String, dt: DataType): DataType =
+  def removeMetadata(key: String, dt: DataType): DataType =
     dt match {
       case StructType(fields) =>
         val newFields = fields.map { f =>

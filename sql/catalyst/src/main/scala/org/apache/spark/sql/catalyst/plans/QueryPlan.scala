@@ -35,8 +35,7 @@ abstract class QueryPlan[PlanType <: QueryPlan[PlanType]] extends TreeNode[PlanT
       .union(inferAdditionalConstraints(constraints))
       .union(constructIsNotNullConstraints(constraints))
       .filter(constraint =>
-        constraint.references.nonEmpty && constraint.references.subsetOf(outputSet) &&
-          constraint.deterministic)
+        constraint.references.nonEmpty && constraint.references.subsetOf(outputSet))
   }
 
   /**
@@ -173,7 +172,7 @@ abstract class QueryPlan[PlanType <: QueryPlan[PlanType]] extends TreeNode[PlanT
       case null => null
     }
 
-    val newArgs = mapProductIterator(recursiveTransform)
+    val newArgs = productIterator.map(recursiveTransform).toArray
 
     if (changed) makeCopy(newArgs).asInstanceOf[this.type] else this
   }
@@ -207,7 +206,7 @@ abstract class QueryPlan[PlanType <: QueryPlan[PlanType]] extends TreeNode[PlanT
       case null => null
     }
 
-    val newArgs = mapProductIterator(recursiveTransform)
+    val newArgs = productIterator.map(recursiveTransform).toArray
 
     if (changed) makeCopy(newArgs).asInstanceOf[this.type] else this
   }
@@ -258,18 +257,14 @@ abstract class QueryPlan[PlanType <: QueryPlan[PlanType]] extends TreeNode[PlanT
 
   override def simpleString: String = statePrefix + super.simpleString
 
-  override def verboseString: String = simpleString
-
   /**
    * All the subqueries of current plan.
    */
   def subqueries: Seq[PlanType] = {
-    expressions.flatMap(_.collect {
-      case e: PlanExpression[_] => e.plan.asInstanceOf[PlanType]
-    })
+    expressions.flatMap(_.collect {case e: SubqueryExpression => e.plan.asInstanceOf[PlanType]})
   }
 
-  override protected def innerChildren: Seq[QueryPlan[_]] = subqueries
+  override def innerChildren: Seq[PlanType] = subqueries
 
   /**
    * Canonicalized copy of this query plan.
@@ -301,9 +296,9 @@ abstract class QueryPlan[PlanType <: QueryPlan[PlanType]] extends TreeNode[PlanT
   /**
    * All the attributes that are used for this plan.
    */
-  lazy val allAttributes: AttributeSeq = children.flatMap(_.output)
+  lazy val allAttributes: Seq[Attribute] = children.flatMap(_.output)
 
-  protected def cleanExpression(e: Expression): Expression = e match {
+  private def cleanExpression(e: Expression): Expression = e match {
     case a: Alias =>
       // As the root of the expression, Alias will always take an arbitrary exprId, we need
       // to erase that for equality testing.
@@ -323,7 +318,7 @@ abstract class QueryPlan[PlanType <: QueryPlan[PlanType]] extends TreeNode[PlanT
       case other => other
     }
 
-    mapProductIterator {
+    productIterator.map {
       case s: Option[_] => s.map(cleanArg)
       case s: Seq[_] => s.map(cleanArg)
       case m: Map[_, _] => m.mapValues(cleanArg)

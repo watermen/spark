@@ -26,14 +26,13 @@ from pyspark.sql import SparkSession
 if __name__ == "__main__":
     spark = SparkSession\
         .builder\
-        .appName("NaiveBayesExample")\
+        .appName("naive_bayes_example")\
         .getOrCreate()
 
     # $example on$
     # Load training data
     data = spark.read.format("libsvm") \
         .load("data/mllib/sample_libsvm_data.txt")
-
     # Split the data into train and test
     splits = data.randomSplit([0.6, 0.4], 1234)
     train = splits[0]
@@ -44,16 +43,11 @@ if __name__ == "__main__":
 
     # train the model
     model = nb.fit(train)
-
-    # select example rows to display.
-    predictions = model.transform(test)
-    predictions.show()
-
-    # compute accuracy on the test set
-    evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction",
-                                                  metricName="accuracy")
-    accuracy = evaluator.evaluate(predictions)
-    print("Test set accuracy = " + str(accuracy))
+    # compute precision on the test set
+    result = model.transform(test)
+    predictionAndLabels = result.select("prediction", "label")
+    evaluator = MulticlassClassificationEvaluator(metricName="precision")
+    print("Precision:" + str(evaluator.evaluate(predictionAndLabels)))
     # $example off$
 
     spark.stop()

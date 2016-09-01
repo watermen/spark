@@ -23,7 +23,6 @@ import scala.collection.JavaConverters._
 
 import org.apache.spark.{SecurityManager, SparkConf}
 import org.apache.spark.internal.Logging
-import org.apache.spark.metrics.MetricsSystem
 import org.apache.spark.network.TransportContext
 import org.apache.spark.network.netty.SparkTransportConf
 import org.apache.spark.network.sasl.SaslServerBootstrap
@@ -42,8 +41,6 @@ import org.apache.spark.util.{ShutdownHookManager, Utils}
 private[deploy]
 class ExternalShuffleService(sparkConf: SparkConf, securityManager: SecurityManager)
   extends Logging {
-  protected val masterMetricsSystem =
-    MetricsSystem.createMetricsSystem("shuffleService", sparkConf, securityManager)
 
   private val enabled = sparkConf.getBoolean("spark.shuffle.service.enabled", false)
   private val port = sparkConf.getInt("spark.shuffle.service.port", 7337)
@@ -56,8 +53,6 @@ class ExternalShuffleService(sparkConf: SparkConf, securityManager: SecurityMana
     new TransportContext(transportConf, blockHandler, true)
 
   private var server: TransportServer = _
-
-  private val shuffleServiceSource = new ExternalShuffleServiceSource(blockHandler)
 
   /** Create a new shuffle block handler. Factored out for subclasses to override. */
   protected def newShuffleBlockHandler(conf: TransportConf): ExternalShuffleBlockHandler = {
@@ -82,9 +77,6 @@ class ExternalShuffleService(sparkConf: SparkConf, securityManager: SecurityMana
         Nil
       }
     server = transportContext.createServer(port, bootstraps.asJava)
-
-    masterMetricsSystem.registerSource(shuffleServiceSource)
-    masterMetricsSystem.start()
   }
 
   /** Clean up all shuffle files associated with an application that has exited. */
@@ -128,7 +120,6 @@ object ExternalShuffleService extends Logging {
     server = newShuffleService(sparkConf, securityManager)
     server.start()
 
-    logDebug("Adding shutdown hook") // force eager creation of logger
     ShutdownHookManager.addShutdownHook { () =>
       logInfo("Shutting down shuffle service.")
       server.stop()

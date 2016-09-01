@@ -41,10 +41,9 @@ if __name__ == "__main__":
     stringIndexer = StringIndexer(inputCol="category", outputCol="categoryIndex")
     model = stringIndexer.fit(df)
     indexed = model.transform(df)
-
-    encoder = OneHotEncoder(inputCol="categoryIndex", outputCol="categoryVec")
+    encoder = OneHotEncoder(dropLast=False, inputCol="categoryIndex", outputCol="categoryVec")
     encoded = encoder.transform(indexed)
-    encoded.show()
+    encoded.select("id", "categoryVec").show()
     # $example off$
 
     spark.stop()

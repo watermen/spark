@@ -120,7 +120,6 @@ class KMeansModel private[ml] (
 
   @Since("2.0.0")
   override def transform(dataset: Dataset[_]): DataFrame = {
-    transformSchema(dataset.schema, logging = true)
     val predictUDF = udf((vector: Vector) => predict(vector))
     dataset.withColumn($(predictionCol), predictUDF(col($(featuresCol))))
   }
@@ -132,7 +131,7 @@ class KMeansModel private[ml] (
 
   private[clustering] def predict(features: Vector): Int = parentModel.predict(features)
 
-  @Since("2.0.0")
+  @Since("1.5.0")
   def clusterCenters: Array[Vector] = parentModel.clusterCenters.map(_.asML)
 
   /**
@@ -212,7 +211,7 @@ object KMeansModel extends MLReadable[KMeansModel] {
         Data(idx, center)
       }
       val dataPath = new Path(path, "data").toString
-      sparkSession.createDataFrame(data).repartition(1).write.parquet(dataPath)
+      sqlContext.createDataFrame(data).repartition(1).write.parquet(dataPath)
     }
   }
 
@@ -223,8 +222,8 @@ object KMeansModel extends MLReadable[KMeansModel] {
 
     override def load(path: String): KMeansModel = {
       // Import implicits for Dataset Encoder
-      val sparkSession = super.sparkSession
-      import sparkSession.implicits._
+      val sqlContext = super.sqlContext
+      import sqlContext.implicits._
 
       val metadata = DefaultParamsReader.loadMetadata(path, sc, className)
       val dataPath = new Path(path, "data").toString
@@ -233,11 +232,11 @@ object KMeansModel extends MLReadable[KMeansModel] {
       val versionRegex(major, _) = metadata.sparkVersion
 
       val clusterCenters = if (major.toInt >= 2) {
-        val data: Dataset[Data] = sparkSession.read.parquet(dataPath).as[Data]
+        val data: Dataset[Data] = sqlContext.read.parquet(dataPath).as[Data]
         data.collect().sortBy(_.clusterIdx).map(_.clusterCenter).map(OldVectors.fromML)
       } else {
         // Loads KMeansModel stored with the old format used by Spark 1.6 and earlier.
-        sparkSession.read.parquet(dataPath).as[OldData].head().clusterCenters
+        sqlContext.read.parquet(dataPath).as[OldData].head().clusterCenters
       }
       val model = new KMeansModel(metadata.uid, new MLlibKMeansModel(clusterCenters))
       DefaultParamsReader.getAndSetParams(model, metadata)
@@ -305,7 +304,6 @@ class KMeans @Since("1.5.0") (
 
   @Since("2.0.0")
   override def fit(dataset: Dataset[_]): KMeansModel = {
-    transformSchema(dataset.schema, logging = true)
     val rdd: RDD[OldVector] = dataset.select(col($(featuresCol))).rdd.map {
       case Row(point: Vector) => OldVectors.fromML(point)
     }

@@ -236,8 +236,9 @@ object RandomDataGenerator {
         // convert it to catalyst value to call udt's deserialize.
         val toCatalystType = CatalystTypeConverters.createToCatalystConverter(udt.sqlType)
 
-        maybeSqlTypeGenerator.map { sqlTypeGenerator =>
-          () => {
+        if (maybeSqlTypeGenerator.isDefined) {
+          val sqlTypeGenerator = maybeSqlTypeGenerator.get
+          val generator = () => {
             val generatedScalaValue = sqlTypeGenerator.apply()
             if (generatedScalaValue == null) {
               null
@@ -245,6 +246,9 @@ object RandomDataGenerator {
               udt.deserialize(toCatalystType(generatedScalaValue))
             }
           }
+          Some(generator)
+        } else {
+          None
         }
       case unsupportedType => None
     }

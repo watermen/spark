@@ -116,10 +116,10 @@ class LDASuite extends SparkFunSuite with MLlibTestSparkContext {
       case (docId, (topicDistribution, (indices, weights))) =>
         assert(indices.length == 2)
         assert(weights.length == 2)
-        val bdvTopicDist = topicDistribution.asBreeze
+        val bdvTopicDist = topicDistribution.toBreeze
         val top2Indices = argtopk(bdvTopicDist, 2)
-        assert(top2Indices.toSet === indices.toSet)
-        assert(bdvTopicDist(top2Indices).toArray.toSet === weights.toSet)
+        assert(top2Indices.toArray === indices)
+        assert(bdvTopicDist(top2Indices).toArray === weights)
     }
 
     // Check: log probabilities
@@ -369,7 +369,7 @@ class LDASuite extends SparkFunSuite with MLlibTestSparkContext {
     val actualPredictions = ldaModel.topicDistributions(docs).cache()
     val topTopics = actualPredictions.map { case (id, topics) =>
         // convert results to expectedPredictions format, which only has highest probability topic
-        val topicsBz = topics.asBreeze.toDenseVector
+        val topicsBz = topics.toBreeze.toDenseVector
         (id, (argmax(topicsBz), max(topicsBz)))
       }.sortByKey()
       .values

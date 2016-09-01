@@ -54,7 +54,7 @@ object PipelineExample {
       .setOutputCol("features")
     val lr = new LogisticRegression()
       .setMaxIter(10)
-      .setRegParam(0.001)
+      .setRegParam(0.01)
     val pipeline = new Pipeline()
       .setStages(Array(tokenizer, hashingTF, lr))
 
@@ -74,7 +74,7 @@ object PipelineExample {
     val test = spark.createDataFrame(Seq(
       (4L, "spark i j k"),
       (5L, "l m n"),
-      (6L, "spark hadoop spark"),
+      (6L, "mapreduce spark"),
       (7L, "apache hadoop")
     )).toDF("id", "text")
 

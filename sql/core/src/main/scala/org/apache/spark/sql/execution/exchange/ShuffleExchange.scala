@@ -40,7 +40,7 @@ case class ShuffleExchange(
     child: SparkPlan,
     @transient coordinator: Option[ExchangeCoordinator]) extends Exchange {
 
-  override lazy val metrics = Map(
+  override private[sql] lazy val metrics = Map(
     "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size"))
 
   override def nodeName: String = {
@@ -81,8 +81,7 @@ case class ShuffleExchange(
    * the partitioning scheme defined in `newPartitioning`. Those partitions of
    * the returned ShuffleDependency will be the input of shuffle.
    */
-  private[exchange] def prepareShuffleDependency()
-    : ShuffleDependency[Int, InternalRow, InternalRow] = {
+  private[sql] def prepareShuffleDependency(): ShuffleDependency[Int, InternalRow, InternalRow] = {
     ShuffleExchange.prepareShuffleDependency(
       child.execute(), child.output, newPartitioning, serializer)
   }
@@ -93,7 +92,7 @@ case class ShuffleExchange(
    * partition start indices array. If this optional array is defined, the returned
    * [[ShuffledRowRDD]] will fetch pre-shuffle partitions based on indices of this array.
    */
-  private[exchange] def preparePostShuffleRDD(
+  private[sql] def preparePostShuffleRDD(
       shuffleDependency: ShuffleDependency[Int, InternalRow, InternalRow],
       specifiedPartitionStartIndices: Option[Array[Int]] = None): ShuffledRowRDD = {
     // If an array of partition start indices is provided, we need to use this array
@@ -130,7 +129,7 @@ case class ShuffleExchange(
 
 object ShuffleExchange {
   def apply(newPartitioning: Partitioning, child: SparkPlan): ShuffleExchange = {
-    ShuffleExchange(newPartitioning, child, coordinator = Option.empty[ExchangeCoordinator])
+    ShuffleExchange(newPartitioning, child, coordinator = None: Option[ExchangeCoordinator])
   }
 
   /**
@@ -195,7 +194,7 @@ object ShuffleExchange {
    * the partitioning scheme defined in `newPartitioning`. Those partitions of
    * the returned ShuffleDependency will be the input of shuffle.
    */
-  def prepareShuffleDependency(
+  private[sql] def prepareShuffleDependency(
       rdd: RDD[InternalRow],
       outputAttributes: Seq[Attribute],
       newPartitioning: Partitioning,

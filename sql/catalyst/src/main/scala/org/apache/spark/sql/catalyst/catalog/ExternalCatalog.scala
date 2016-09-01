@@ -27,7 +27,7 @@ import org.apache.spark.sql.catalyst.analysis.NoSuchDatabaseException
  * can be accessed in multiple threads. This is an external catalog because it is expected to
  * interact with external systems.
  *
- * Implementations should throw [[NoSuchDatabaseException]] when databases don't exist.
+ * Implementations should throw [[NoSuchDatabaseException]] when table or database don't exist.
  */
 abstract class ExternalCatalog {
   import CatalogTypes.TablePartitionSpec
@@ -69,21 +69,20 @@ abstract class ExternalCatalog {
   // Tables
   // --------------------------------------------------------------------------
 
-  def createTable(tableDefinition: CatalogTable, ignoreIfExists: Boolean): Unit
+  def createTable(db: String, tableDefinition: CatalogTable, ignoreIfExists: Boolean): Unit
 
-  def dropTable(db: String, table: String, ignoreIfNotExists: Boolean, purge: Boolean): Unit
+  def dropTable(db: String, table: String, ignoreIfNotExists: Boolean): Unit
 
   def renameTable(db: String, oldName: String, newName: String): Unit
 
   /**
-   * Alter a table whose database and name match the ones specified in `tableDefinition`, assuming
-   * the table exists. Note that, even though we can specify database in `tableDefinition`, it's
-   * used to identify the table, not to alter the table's database, which is not allowed.
+   * Alter a table whose name that matches the one specified in `tableDefinition`,
+   * assuming the table exists.
    *
    * Note: If the underlying implementation does not support altering a certain field,
    * this becomes a no-op.
    */
-  def alterTable(tableDefinition: CatalogTable): Unit
+  def alterTable(db: String, tableDefinition: CatalogTable): Unit
 
   def getTable(db: String, table: String): CatalogTable
 
@@ -126,8 +125,7 @@ abstract class ExternalCatalog {
       db: String,
       table: String,
       parts: Seq[TablePartitionSpec],
-      ignoreIfNotExists: Boolean,
-      purge: Boolean): Unit
+      ignoreIfNotExists: Boolean): Unit
 
   /**
    * Override the specs of one or many existing table partitions, assuming they exist.

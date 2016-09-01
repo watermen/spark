@@ -30,10 +30,11 @@ Run with:
   bin/spark-submit examples/src/main/python/ml/one_vs_rest_example.py
 """
 
+
 if __name__ == "__main__":
     spark = SparkSession \
         .builder \
-        .appName("OneVsRestExample") \
+        .appName("PythonOneVsRestExample") \
         .getOrCreate()
 
     # $example on$
@@ -57,11 +58,11 @@ if __name__ == "__main__":
     predictions = ovrModel.transform(test)
 
     # obtain evaluator.
-    evaluator = MulticlassClassificationEvaluator(metricName="accuracy")
+    evaluator = MulticlassClassificationEvaluator(metricName="precision")
 
     # compute the classification error on test data.
-    accuracy = evaluator.evaluate(predictions)
-    print("Test Error = %g" % (1.0 - accuracy))
+    precision = evaluator.evaluate(predictions)
+    print("Test Error : " + str(1 - precision))
     # $example off$
 
     spark.stop()

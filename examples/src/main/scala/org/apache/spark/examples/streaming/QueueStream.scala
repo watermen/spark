@@ -43,7 +43,7 @@ object QueueStream {
     reducedStream.print()
     ssc.start()
 
-    // Create and push some RDDs into rddQueue
+    // Create and push some RDDs into
     for (i <- 1 to 30) {
       rddQueue.synchronized {
         rddQueue += ssc.sparkContext.makeRDD(1 to 1000, 10)

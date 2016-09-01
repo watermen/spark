@@ -17,7 +17,7 @@
 
 package org.apache.spark.repl
 
-import java.io.{ByteArrayOutputStream, FileNotFoundException, FilterInputStream, InputStream, IOException}
+import java.io.{ByteArrayOutputStream, FilterInputStream, InputStream, IOException}
 import java.net.{HttpURLConnection, URI, URL, URLEncoder}
 import java.nio.channels.Channels
 
@@ -79,7 +79,13 @@ class ExecutorClassLoader(
         case e: ClassNotFoundException =>
           val classOption = findClassLocally(name)
           classOption match {
-            case None => throw new ClassNotFoundException(name, e)
+            case None =>
+              // If this class has a cause, it will break the internal assumption of Janino
+              // (the compiler used for Spark SQL code-gen).
+              // See org.codehaus.janino.ClassLoaderIClassLoader's findIClass, you will see
+              // its behavior will be changed if there is a cause and the compilation
+              // of generated class will fail.
+              throw new ClassNotFoundException(name)
             case Some(a) => a
           }
       }
@@ -147,11 +153,10 @@ class ExecutorClassLoader(
   private def getClassFileInputStreamFromFileSystem(fileSystem: FileSystem)(
       pathInDirectory: String): InputStream = {
     val path = new Path(directory, pathInDirectory)
-    try {
+    if (fileSystem.exists(path)) {
       fileSystem.open(path)
-    } catch {
-      case _: FileNotFoundException =>
-        throw new ClassNotFoundException(s"Class file not found at path $path")
+    } else {
+      throw new ClassNotFoundException(s"Class file not found at path $path")
     }
   }
 

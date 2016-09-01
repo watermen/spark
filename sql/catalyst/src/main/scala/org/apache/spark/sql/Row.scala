@@ -300,11 +300,19 @@ trait Row extends Serializable {
     getMap[K, V](i).asJava
 
   /**
-   * Returns the value at position i of struct type as a [[Row]] object.
+   * Returns the value at position i of struct type as an [[Row]] object.
    *
    * @throws ClassCastException when data type does not match.
    */
-  def getStruct(i: Int): Row = getAs[Row](i)
+  def getStruct(i: Int): Row = {
+    // Product and Row both are recognized as StructType in a Row
+    val t = get(i)
+    if (t.isInstanceOf[Product]) {
+      Row.fromTuple(t.asInstanceOf[Product])
+    } else {
+      t.asInstanceOf[Row]
+    }
+  }
 
   /**
    * Returns the value at position i.
@@ -463,6 +471,6 @@ trait Row extends Serializable {
    * @throws NullPointerException when value is null.
    */
   private def getAnyValAs[T <: AnyVal](i: Int): T =
-    if (isNullAt(i)) throw new NullPointerException(s"Value at index $i is null")
+    if (isNullAt(i)) throw new NullPointerException(s"Value at index $i in null")
     else getAs[T](i)
 }

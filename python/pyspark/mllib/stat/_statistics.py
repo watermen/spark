@@ -160,6 +160,8 @@ class Statistics(object):
     @ignore_unicode_prefix
     def chiSqTest(observed, expected=None):
         """
+        .. note:: Experimental
+
         If `observed` is Vector, conduct Pearson's chi-squared goodness
         of fit test of the observed data against the expected distribution,
         or againt the uniform distribution (by default), with each category
@@ -244,6 +246,8 @@ class Statistics(object):
     @ignore_unicode_prefix
     def kolmogorovSmirnovTest(data, distName="norm", *params):
         """
+        .. note:: Experimental
+
         Performs the Kolmogorov-Smirnov (KS) test for data sampled from
         a continuous distribution. It tests the null hypothesis that
         the data is generated from a particular distribution.

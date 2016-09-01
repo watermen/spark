@@ -38,6 +38,4 @@ private object MsSqlServerDialect extends JdbcDialect {
     case TimestampType => Some(JdbcType("DATETIME", java.sql.Types.TIMESTAMP))
     case _ => None
   }
-
-  override def isCascadingTruncateTable(): Option[Boolean] = Some(false)
 }

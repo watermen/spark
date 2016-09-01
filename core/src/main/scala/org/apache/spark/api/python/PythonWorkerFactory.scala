@@ -235,7 +235,7 @@ private[spark] class PythonWorkerFactory(pythonExec: String, envVars: Map[String
   }
 
   private def cleanupIdleWorkers() {
-    while (idleWorkers.nonEmpty) {
+    while (idleWorkers.length > 0) {
       val worker = idleWorkers.dequeue()
       try {
         // the worker will exit after closing the socket

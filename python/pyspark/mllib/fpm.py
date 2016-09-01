@@ -31,6 +31,8 @@ __all__ = ['FPGrowth', 'FPGrowthModel', 'PrefixSpan', 'PrefixSpanModel']
 @ignore_unicode_prefix
 class FPGrowthModel(JavaModelWrapper, JavaSaveable, JavaLoader):
     """
+    .. note:: Experimental
+
     A FP-Growth model for mining frequent itemsets
     using the Parallel FP-Growth algorithm.
 
@@ -62,12 +64,14 @@ class FPGrowthModel(JavaModelWrapper, JavaSaveable, JavaLoader):
         Load a model from the given path.
         """
         model = cls._load_java(sc, path)
-        wrapper = sc._jvm.org.apache.spark.mllib.api.python.FPGrowthModelWrapper(model)
+        wrapper = sc._jvm.FPGrowthModelWrapper(model)
         return FPGrowthModel(wrapper)
 
 
 class FPGrowth(object):
     """
+    .. note:: Experimental
+
     A Parallel FP-growth algorithm to mine frequent itemsets.
 
     .. versionadded:: 1.4.0
@@ -104,6 +108,8 @@ class FPGrowth(object):
 @ignore_unicode_prefix
 class PrefixSpanModel(JavaModelWrapper):
     """
+    .. note:: Experimental
+
     Model fitted by PrefixSpan
 
     >>> data = [
@@ -127,6 +133,8 @@ class PrefixSpanModel(JavaModelWrapper):
 
 class PrefixSpan(object):
     """
+    .. note:: Experimental
+
     A parallel PrefixSpan algorithm to mine frequent sequential patterns.
     The PrefixSpan algorithm is described in J. Pei, et al., PrefixSpan:
     Mining Sequential Patterns Efficiently by Prefix-Projected Pattern Growth

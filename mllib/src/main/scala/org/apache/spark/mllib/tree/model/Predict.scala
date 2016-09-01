@@ -20,7 +20,6 @@ package org.apache.spark.mllib.tree.model
 import org.apache.spark.annotation.{DeveloperApi, Since}
 
 /**
- * :: DeveloperApi ::
  * Predicted value for a node
  * @param predict predicted value
  * @param prob probability of the label (classification only)

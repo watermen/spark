@@ -18,31 +18,26 @@
 package org.apache.spark.sql.execution.command
 
 import org.apache.spark.sql.{Dataset, Row, SparkSession}
-import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 
-case class CacheTableCommand(
-    tableIdent: TableIdentifier,
-    plan: Option[LogicalPlan],
-    isLazy: Boolean) extends RunnableCommand {
-  require(plan.isEmpty || tableIdent.database.isEmpty,
-    "Database name is not allowed in CACHE TABLE AS SELECT")
 
-  override protected def innerChildren: Seq[QueryPlan[_]] = {
-    plan.toSeq
-  }
+case class CacheTableCommand(
+  tableName: String,
+  plan: Option[LogicalPlan],
+  isLazy: Boolean)
+  extends RunnableCommand {
 
   override def run(sparkSession: SparkSession): Seq[Row] = {
     plan.foreach { logicalPlan =>
-      Dataset.ofRows(sparkSession, logicalPlan).createTempView(tableIdent.quotedString)
+      sparkSession.createTempView(
+        tableName, Dataset.ofRows(sparkSession, logicalPlan), replaceIfExists = true)
     }
-    sparkSession.catalog.cacheTable(tableIdent.quotedString)
+    sparkSession.catalog.cacheTable(tableName)
 
     if (!isLazy) {
       // Performs eager caching
-      sparkSession.table(tableIdent).count()
+      sparkSession.table(tableName).count()
     }
 
     Seq.empty[Row]
@@ -52,10 +47,10 @@ case class CacheTableCommand(
 }
 
 
-case class UncacheTableCommand(tableIdent: TableIdentifier) extends RunnableCommand {
+case class UncacheTableCommand(tableName: String) extends RunnableCommand {
 
   override def run(sparkSession: SparkSession): Seq[Row] = {
-    sparkSession.catalog.uncacheTable(tableIdent.quotedString)
+    sparkSession.table(tableName).unpersist(blocking = false)
     Seq.empty[Row]
   }
 

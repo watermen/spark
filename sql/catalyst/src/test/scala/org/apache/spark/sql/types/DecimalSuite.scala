@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.types
 
+import scala.language.postfixOps
+
 import org.scalatest.PrivateMethodTester
 
 import org.apache.spark.SparkFunSuite

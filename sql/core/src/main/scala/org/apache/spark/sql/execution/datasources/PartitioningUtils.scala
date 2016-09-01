@@ -31,7 +31,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Cast, Literal}
 import org.apache.spark.sql.types._
 
-// TODO: We should tighten up visibility of the classes here once we clean up Hive coupling.
 
 object PartitionDirectory {
   def apply(values: InternalRow, path: String): PartitionDirectory =
@@ -42,23 +41,22 @@ object PartitionDirectory {
  * Holds a directory in a partitioned collection of files as well as as the partition values
  * in the form of a Row.  Before scanning, the files at `path` need to be enumerated.
  */
-case class PartitionDirectory(values: InternalRow, path: Path)
+private[sql] case class PartitionDirectory(values: InternalRow, path: Path)
 
-case class PartitionSpec(
+private[sql] case class PartitionSpec(
     partitionColumns: StructType,
     partitions: Seq[PartitionDirectory])
 
-object PartitionSpec {
+private[sql] object PartitionSpec {
   val emptySpec = PartitionSpec(StructType(Seq.empty[StructField]), Seq.empty[PartitionDirectory])
 }
 
-object PartitioningUtils {
+private[sql] object PartitioningUtils {
   // This duplicates default value of Hive `ConfVars.DEFAULTPARTITIONNAME`, since sql/core doesn't
   // depend on Hive.
-  val DEFAULT_PARTITION_NAME = "__HIVE_DEFAULT_PARTITION__"
+  private[sql] val DEFAULT_PARTITION_NAME = "__HIVE_DEFAULT_PARTITION__"
 
-  private[datasources] case class PartitionValues(columnNames: Seq[String], literals: Seq[Literal])
-  {
+  private[sql] case class PartitionValues(columnNames: Seq[String], literals: Seq[Literal]) {
     require(columnNames.size == literals.size)
   }
 
@@ -85,7 +83,7 @@ object PartitioningUtils {
    *         path = "hdfs://<host>:<port>/path/to/partition/a=2/b=world/c=6.28")))
    * }}}
    */
-  private[datasources] def parsePartitions(
+  private[sql] def parsePartitions(
       paths: Seq[Path],
       defaultPartitionName: String,
       typeInference: Boolean,
@@ -161,14 +159,14 @@ object PartitioningUtils {
    *     Seq(
    *       Literal.create(42, IntegerType),
    *       Literal.create("hello", StringType),
-   *       Literal.create(3.14, DoubleType)))
+   *       Literal.create(3.14, FloatType)))
    * }}}
    * and the path when we stop the discovery is:
    * {{{
    *   hdfs://<host>:<port>/path/to/partition
    * }}}
    */
-  private[datasources] def parsePartition(
+  private[sql] def parsePartition(
       path: Path,
       defaultPartitionName: String,
       typeInference: Boolean,
@@ -251,7 +249,7 @@ object PartitioningUtils {
    *   DoubleType -> StringType
    * }}}
    */
-  def resolvePartitions(
+  private[sql] def resolvePartitions(
       pathsWithPartitionValues: Seq[(Path, PartitionValues)]): Seq[PartitionValues] = {
     if (pathsWithPartitionValues.isEmpty) {
       Seq.empty
@@ -277,7 +275,7 @@ object PartitioningUtils {
     }
   }
 
-  private[datasources] def listConflictingPartitionColumns(
+  private[sql] def listConflictingPartitionColumns(
       pathWithPartitionValues: Seq[(Path, PartitionValues)]): String = {
     val distinctPartColNames = pathWithPartitionValues.map(_._2.columnNames).distinct
 
@@ -310,7 +308,7 @@ object PartitioningUtils {
    * [[IntegerType]], [[LongType]], [[DoubleType]], [[DecimalType.SYSTEM_DEFAULT]], and
    * [[StringType]].
    */
-  private[datasources] def inferPartitionColumnValue(
+  private[sql] def inferPartitionColumnValue(
       raw: String,
       defaultPartitionName: String,
       typeInference: Boolean): Literal = {
@@ -341,7 +339,7 @@ object PartitioningUtils {
   private val upCastingOrder: Seq[DataType] =
     Seq(NullType, IntegerType, LongType, FloatType, DoubleType, StringType)
 
-  def validatePartitionColumn(
+  def validatePartitionColumnDataTypes(
       schema: StructType,
       partitionColumns: Seq[String],
       caseSensitive: Boolean): Unit = {
@@ -352,10 +350,6 @@ object PartitioningUtils {
         case _ => throw new AnalysisException(s"Cannot use ${field.dataType} for partition column")
       }
     }
-
-    if (partitionColumns.nonEmpty && partitionColumns.size == schema.fields.length) {
-      throw new AnalysisException(s"Cannot use all columns for partition columns")
-    }
   }
 
   def partitionColumnsSchema(
@@ -365,7 +359,7 @@ object PartitioningUtils {
     val equality = columnNameEquality(caseSensitive)
     StructType(partitionColumns.map { col =>
       schema.find(f => equality(f.name, col)).getOrElse {
-        throw new AnalysisException(s"Partition column $col not found in schema $schema")
+        throw new RuntimeException(s"Partition column $col not found in schema $schema")
       }
     }).asNullable
   }

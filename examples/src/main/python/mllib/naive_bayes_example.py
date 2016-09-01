@@ -29,9 +29,15 @@ import shutil
 from pyspark import SparkContext
 # $example on$
 from pyspark.mllib.classification import NaiveBayes, NaiveBayesModel
-from pyspark.mllib.util import MLUtils
+from pyspark.mllib.linalg import Vectors
+from pyspark.mllib.regression import LabeledPoint
 
 
+def parseLine(line):
+    parts = line.split(',')
+    label = float(parts[0])
+    features = Vectors.dense([float(x) for x in parts[1].split(' ')])
+    return LabeledPoint(label, features)
 # $example off$
 
 if __name__ == "__main__":
@@ -39,11 +45,10 @@ if __name__ == "__main__":
     sc = SparkContext(appName="PythonNaiveBayesExample")
 
     # $example on$
-    # Load and parse the data file.
-    data = MLUtils.loadLibSVMFile(sc, "data/mllib/sample_libsvm_data.txt")
+    data = sc.textFile('data/mllib/sample_naive_bayes_data.txt').map(parseLine)
 
     # Split data approximately into training (60%) and test (40%)
-    training, test = data.randomSplit([0.6, 0.4])
+    training, test = data.randomSplit([0.6, 0.4], seed=0)
 
     # Train a naive Bayes model.
     model = NaiveBayes.train(training, 1.0)

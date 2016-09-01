@@ -141,13 +141,7 @@ class DAGScheduler(
 
   private[scheduler] val jobIdToStageIds = new HashMap[Int, HashSet[Int]]
   private[scheduler] val stageIdToStage = new HashMap[Int, Stage]
-  /**
-   * Mapping from shuffle dependency ID to the ShuffleMapStage that will generate the data for
-   * that dependency. Only includes stages that are part of currently running job (when the job(s)
-   * that require the shuffle stage complete, the mapping will be removed, and the only record of
-   * the shuffle data will be in the MapOutputTracker).
-   */
-  private[scheduler] val shuffleIdToMapStage = new HashMap[Int, ShuffleMapStage]
+  private[scheduler] val shuffleToMapStage = new HashMap[Int, ShuffleMapStage]
   private[scheduler] val jobIdToActiveJob = new HashMap[Int, ActiveJob]
 
   // Stages we need to run whose parents aren't done
@@ -282,55 +276,86 @@ class DAGScheduler(
   }
 
   /**
-   * Gets a shuffle map stage if one exists in shuffleIdToMapStage. Otherwise, if the
-   * shuffle map stage doesn't already exist, this method will create the shuffle map stage in
-   * addition to any missing ancestor shuffle map stages.
+   * Get or create a shuffle map stage for the given shuffle dependency's map side.
    */
-  private def getOrCreateShuffleMapStage(
+  private def getShuffleMapStage(
       shuffleDep: ShuffleDependency[_, _, _],
       firstJobId: Int): ShuffleMapStage = {
-    shuffleIdToMapStage.get(shuffleDep.shuffleId) match {
-      case Some(stage) =>
-        stage
-
+    shuffleToMapStage.get(shuffleDep.shuffleId) match {
+      case Some(stage) => stage
       case None =>
-        // Create stages for all missing ancestor shuffle dependencies.
-        getMissingAncestorShuffleDependencies(shuffleDep.rdd).foreach { dep =>
-          // Even though getMissingAncestorShuffleDependencies only returns shuffle dependencies
-          // that were not already in shuffleIdToMapStage, it's possible that by the time we
-          // get to a particular dependency in the foreach loop, it's been added to
-          // shuffleIdToMapStage by the stage creation process for an earlier dependency. See
-          // SPARK-13902 for more information.
-          if (!shuffleIdToMapStage.contains(dep.shuffleId)) {
-            createShuffleMapStage(dep, firstJobId)
+        // We are going to register ancestor shuffle dependencies
+        getAncestorShuffleDependencies(shuffleDep.rdd).foreach { dep =>
+          if (!shuffleToMapStage.contains(dep.shuffleId)) {
+            shuffleToMapStage(dep.shuffleId) = newOrUsedShuffleStage(dep, firstJobId)
           }
         }
-        // Finally, create a stage for the given shuffle dependency.
-        createShuffleMapStage(shuffleDep, firstJobId)
+        // Then register current shuffleDep
+        val stage = newOrUsedShuffleStage(shuffleDep, firstJobId)
+        shuffleToMapStage(shuffleDep.shuffleId) = stage
+        stage
     }
   }
 
   /**
-   * Creates a ShuffleMapStage that generates the given shuffle dependency's partitions. If a
-   * previously run stage generated the same shuffle data, this function will copy the output
-   * locations that are still available from the previous shuffle to avoid unnecessarily
-   * regenerating data.
+   * Helper function to eliminate some code re-use when creating new stages.
    */
-  def createShuffleMapStage(shuffleDep: ShuffleDependency[_, _, _], jobId: Int): ShuffleMapStage = {
-    val rdd = shuffleDep.rdd
-    val numTasks = rdd.partitions.length
-    val parents = getOrCreateParentStages(rdd, jobId)
+  private def getParentStagesAndId(rdd: RDD[_], firstJobId: Int): (List[Stage], Int) = {
+    val parentStages = getParentStages(rdd, firstJobId)
     val id = nextStageId.getAndIncrement()
-    val stage = new ShuffleMapStage(id, rdd, numTasks, parents, jobId, rdd.creationSite, shuffleDep)
+    (parentStages, id)
+  }
+
+  /**
+   * Create a ShuffleMapStage as part of the (re)-creation of a shuffle map stage in
+   * newOrUsedShuffleStage.  The stage will be associated with the provided firstJobId.
+   * Production of shuffle map stages should always use newOrUsedShuffleStage, not
+   * newShuffleMapStage directly.
+   */
+  private def newShuffleMapStage(
+      rdd: RDD[_],
+      numTasks: Int,
+      shuffleDep: ShuffleDependency[_, _, _],
+      firstJobId: Int,
+      callSite: CallSite): ShuffleMapStage = {
+    val (parentStages: List[Stage], id: Int) = getParentStagesAndId(rdd, firstJobId)
+    val stage: ShuffleMapStage = new ShuffleMapStage(id, rdd, numTasks, parentStages,
+      firstJobId, callSite, shuffleDep)
 
     stageIdToStage(id) = stage
-    shuffleIdToMapStage(shuffleDep.shuffleId) = stage
-    updateJobIdStageIdMaps(jobId, stage)
+    updateJobIdStageIdMaps(firstJobId, stage)
+    stage
+  }
 
+  /**
+   * Create a ResultStage associated with the provided jobId.
+   */
+  private def newResultStage(
+      rdd: RDD[_],
+      func: (TaskContext, Iterator[_]) => _,
+      partitions: Array[Int],
+      jobId: Int,
+      callSite: CallSite): ResultStage = {
+    val (parentStages: List[Stage], id: Int) = getParentStagesAndId(rdd, jobId)
+    val stage = new ResultStage(id, rdd, func, partitions, parentStages, jobId, callSite)
+    stageIdToStage(id) = stage
+    updateJobIdStageIdMaps(jobId, stage)
+    stage
+  }
+
+  /**
+   * Create a shuffle map Stage for the given RDD.  The stage will also be associated with the
+   * provided firstJobId.  If a stage for the shuffleId existed previously so that the shuffleId is
+   * present in the MapOutputTracker, then the number and location of available outputs are
+   * recovered from the MapOutputTracker
+   */
+  private def newOrUsedShuffleStage(
+      shuffleDep: ShuffleDependency[_, _, _],
+      firstJobId: Int): ShuffleMapStage = {
+    val rdd = shuffleDep.rdd
+    val numTasks = rdd.partitions.length
+    val stage = newShuffleMapStage(rdd, numTasks, shuffleDep, firstJobId, rdd.creationSite)
     if (mapOutputTracker.containsShuffle(shuffleDep.shuffleId)) {
-      // A previously run stage generated partitions for this shuffle, so for each output
-      // that's still available, copy information about that output location to the new stage
-      // (so we don't unnecessarily re-compute that data).
       val serLocs = mapOutputTracker.getSerializedMapOutputStatuses(shuffleDep.shuffleId)
       val locs = MapOutputTracker.deserializeMapStatuses(serLocs)
       (0 until locs.length).foreach { i =>
@@ -349,85 +374,63 @@ class DAGScheduler(
   }
 
   /**
-   * Create a ResultStage associated with the provided jobId.
-   */
-  private def createResultStage(
-      rdd: RDD[_],
-      func: (TaskContext, Iterator[_]) => _,
-      partitions: Array[Int],
-      jobId: Int,
-      callSite: CallSite): ResultStage = {
-    val parents = getOrCreateParentStages(rdd, jobId)
-    val id = nextStageId.getAndIncrement()
-    val stage = new ResultStage(id, rdd, func, partitions, parents, jobId, callSite)
-    stageIdToStage(id) = stage
-    updateJobIdStageIdMaps(jobId, stage)
-    stage
-  }
-
-  /**
    * Get or create the list of parent stages for a given RDD.  The new Stages will be created with
    * the provided firstJobId.
    */
-  private def getOrCreateParentStages(rdd: RDD[_], firstJobId: Int): List[Stage] = {
-    getShuffleDependencies(rdd).map { shuffleDep =>
-      getOrCreateShuffleMapStage(shuffleDep, firstJobId)
-    }.toList
-  }
-
-  /** Find ancestor shuffle dependencies that are not registered in shuffleToMapStage yet */
-  private def getMissingAncestorShuffleDependencies(
-      rdd: RDD[_]): Stack[ShuffleDependency[_, _, _]] = {
-    val ancestors = new Stack[ShuffleDependency[_, _, _]]
+  private def getParentStages(rdd: RDD[_], firstJobId: Int): List[Stage] = {
+    val parents = new HashSet[Stage]
     val visited = new HashSet[RDD[_]]
     // We are manually maintaining a stack here to prevent StackOverflowError
     // caused by recursively visiting
     val waitingForVisit = new Stack[RDD[_]]
-    waitingForVisit.push(rdd)
-    while (waitingForVisit.nonEmpty) {
-      val toVisit = waitingForVisit.pop()
-      if (!visited(toVisit)) {
-        visited += toVisit
-        getShuffleDependencies(toVisit).foreach { shuffleDep =>
-          if (!shuffleIdToMapStage.contains(shuffleDep.shuffleId)) {
-            ancestors.push(shuffleDep)
-            waitingForVisit.push(shuffleDep.rdd)
-          } // Otherwise, the dependency and its ancestors have already been registered.
+    def visit(r: RDD[_]) {
+      if (!visited(r)) {
+        visited += r
+        // Kind of ugly: need to register RDDs with the cache here since
+        // we can't do it in its constructor because # of partitions is unknown
+        for (dep <- r.dependencies) {
+          dep match {
+            case shufDep: ShuffleDependency[_, _, _] =>
+              parents += getShuffleMapStage(shufDep, firstJobId)
+            case _ =>
+              waitingForVisit.push(dep.rdd)
+          }
         }
       }
     }
-    ancestors
-  }
-
-  /**
-   * Returns shuffle dependencies that are immediate parents of the given RDD.
-   *
-   * This function will not return more distant ancestors.  For example, if C has a shuffle
-   * dependency on B which has a shuffle dependency on A:
-   *
-   * A <-- B <-- C
-   *
-   * calling this function with rdd C will only return the B <-- C dependency.
-   *
-   * This function is scheduler-visible for the purpose of unit testing.
-   */
-  private[scheduler] def getShuffleDependencies(
-      rdd: RDD[_]): HashSet[ShuffleDependency[_, _, _]] = {
-    val parents = new HashSet[ShuffleDependency[_, _, _]]
-    val visited = new HashSet[RDD[_]]
-    val waitingForVisit = new Stack[RDD[_]]
     waitingForVisit.push(rdd)
     while (waitingForVisit.nonEmpty) {
-      val toVisit = waitingForVisit.pop()
-      if (!visited(toVisit)) {
-        visited += toVisit
-        toVisit.dependencies.foreach {
-          case shuffleDep: ShuffleDependency[_, _, _] =>
-            parents += shuffleDep
-          case dependency =>
-            waitingForVisit.push(dependency.rdd)
+      visit(waitingForVisit.pop())
+    }
+    parents.toList
+  }
+
+  /** Find ancestor shuffle dependencies that are not registered in shuffleToMapStage yet */
+  private def getAncestorShuffleDependencies(rdd: RDD[_]): Stack[ShuffleDependency[_, _, _]] = {
+    val parents = new Stack[ShuffleDependency[_, _, _]]
+    val visited = new HashSet[RDD[_]]
+    // We are manually maintaining a stack here to prevent StackOverflowError
+    // caused by recursively visiting
+    val waitingForVisit = new Stack[RDD[_]]
+    def visit(r: RDD[_]) {
+      if (!visited(r)) {
+        visited += r
+        for (dep <- r.dependencies) {
+          dep match {
+            case shufDep: ShuffleDependency[_, _, _] =>
+              if (!shuffleToMapStage.contains(shufDep.shuffleId)) {
+                parents.push(shufDep)
+              }
+            case _ =>
+          }
+          waitingForVisit.push(dep.rdd)
         }
       }
+    }
+
+    waitingForVisit.push(rdd)
+    while (waitingForVisit.nonEmpty) {
+      visit(waitingForVisit.pop())
     }
     parents
   }
@@ -446,7 +449,7 @@ class DAGScheduler(
           for (dep <- rdd.dependencies) {
             dep match {
               case shufDep: ShuffleDependency[_, _, _] =>
-                val mapStage = getOrCreateShuffleMapStage(shufDep, stage.firstJobId)
+                val mapStage = getShuffleMapStage(shufDep, stage.firstJobId)
                 if (!mapStage.isAvailable) {
                   missing += mapStage
                 }
@@ -475,7 +478,8 @@ class DAGScheduler(
         val s = stages.head
         s.jobIds += jobId
         jobIdToStageIds.getOrElseUpdate(jobId, new HashSet[Int]()) += s.id
-        val parentsWithoutThisJobId = s.parents.filter { ! _.jobIds.contains(jobId) }
+        val parents: List[Stage] = getParentStages(s.rdd, jobId)
+        val parentsWithoutThisJobId = parents.filter { ! _.jobIds.contains(jobId) }
         updateJobIdStageIdMapsList(parentsWithoutThisJobId ++ stages.tail)
       }
     }
@@ -508,8 +512,8 @@ class DAGScheduler(
                   logDebug("Removing running stage %d".format(stageId))
                   runningStages -= stage
                 }
-                for ((k, v) <- shuffleIdToMapStage.find(_._2 == stage)) {
-                  shuffleIdToMapStage.remove(k)
+                for ((k, v) <- shuffleToMapStage.find(_._2 == stage)) {
+                  shuffleToMapStage.remove(k)
                 }
                 if (waitingStages.contains(stage)) {
                   logDebug("Removing stage %d from waiting set.".format(stageId))
@@ -835,7 +839,7 @@ class DAGScheduler(
     try {
       // New stage creation may throw an exception if, for example, jobs are run on a
       // HadoopRDD whose underlying HDFS files have been deleted.
-      finalStage = createResultStage(finalRDD, func, partitions, jobId, callSite)
+      finalStage = newResultStage(finalRDD, func, partitions, jobId, callSite)
     } catch {
       case e: Exception =>
         logWarning("Creating new stage failed due to exception - job: " + jobId, e)
@@ -873,7 +877,7 @@ class DAGScheduler(
     try {
       // New stage creation may throw an exception if, for example, jobs are run on a
       // HadoopRDD whose underlying HDFS files have been deleted.
-      finalStage = getOrCreateShuffleMapStage(dependency, jobId)
+      finalStage = getShuffleMapStage(dependency, jobId)
     } catch {
       case e: Exception =>
         logWarning("Creating new stage failed due to exception - job: " + jobId, e)
@@ -958,6 +962,7 @@ class DAGScheduler(
         case s: ShuffleMapStage =>
           partitionsToCompute.map { id => (id, getPreferredLocs(stage.rdd, id))}.toMap
         case s: ResultStage =>
+          val job = s.activeJob.get
           partitionsToCompute.map { id =>
             val p = s.partitions(id)
             (id, getPreferredLocs(stage.rdd, p))
@@ -1019,6 +1024,7 @@ class DAGScheduler(
           }
 
         case stage: ResultStage =>
+          val job = stage.activeJob.get
           partitionsToCompute.map { id =>
             val p: Int = stage.partitions(id)
             val part = stage.rdd.partitions(p)
@@ -1234,7 +1240,7 @@ class DAGScheduler(
 
       case FetchFailed(bmAddress, shuffleId, mapId, reduceId, failureMessage) =>
         val failedStage = stageIdToStage(task.stageId)
-        val mapStage = shuffleIdToMapStage(shuffleId)
+        val mapStage = shuffleToMapStage(shuffleId)
 
         if (failedStage.latestInfo.attemptId != task.stageAttemptId) {
           logInfo(s"Ignoring fetch failure from $task as it's from $failedStage attempt" +
@@ -1324,14 +1330,14 @@ class DAGScheduler(
 
       if (!env.blockManager.externalShuffleServiceEnabled || fetchFailed) {
         // TODO: This will be really slow if we keep accumulating shuffle map stages
-        for ((shuffleId, stage) <- shuffleIdToMapStage) {
+        for ((shuffleId, stage) <- shuffleToMapStage) {
           stage.removeOutputsOnExecutor(execId)
           mapOutputTracker.registerMapOutputs(
             shuffleId,
             stage.outputLocInMapOutputTrackerFormat(),
             changeEpoch = true)
         }
-        if (shuffleIdToMapStage.isEmpty) {
+        if (shuffleToMapStage.isEmpty) {
           mapOutputTracker.incrementEpoch()
         }
         clearCacheLocs()
@@ -1465,10 +1471,8 @@ class DAGScheduler(
     }
 
     if (ableToCancelStages) {
-      // SPARK-15783 important to cleanup state first, just for tests where we have some asserts
-      // against the state.  Otherwise we have a *little* bit of flakiness in the tests.
-      cleanupStateForJobAndIndependentStages(job)
       job.listener.jobFailed(error)
+      cleanupStateForJobAndIndependentStages(job)
       listenerBus.post(SparkListenerJobEnd(job.jobId, clock.getTimeMillis(), JobFailed(error)))
     }
   }
@@ -1488,7 +1492,7 @@ class DAGScheduler(
         for (dep <- rdd.dependencies) {
           dep match {
             case shufDep: ShuffleDependency[_, _, _] =>
-              val mapStage = getOrCreateShuffleMapStage(shufDep, stage.firstJobId)
+              val mapStage = getShuffleMapStage(shufDep, stage.firstJobId)
               if (!mapStage.isAvailable) {
                 waitingForVisit.push(mapStage.rdd)
               }  // Otherwise there's no need to follow the dependency back

@@ -53,7 +53,7 @@ class HiveExplainSuite extends QueryTest with SQLTestUtils with TestHiveSingleto
       "== Analyzed Logical Plan ==",
       "== Optimized Logical Plan ==",
       "== Physical Plan ==",
-      "CreateHiveTableAsSelect",
+      "CreateTableAsSelect",
       "InsertIntoHiveTable",
       "Limit",
       "src")
@@ -71,16 +71,16 @@ class HiveExplainSuite extends QueryTest with SQLTestUtils with TestHiveSingleto
       "== Analyzed Logical Plan ==",
       "== Optimized Logical Plan ==",
       "== Physical Plan ==",
-      "CreateHiveTableAsSelect",
+      "CreateTableAsSelect",
       "InsertIntoHiveTable",
       "Limit",
       "src")
   }
 
   test("SPARK-6212: The EXPLAIN output of CTAS only shows the analyzed plan") {
-    withTempView("jt") {
+    withTempTable("jt") {
       val rdd = sparkContext.parallelize((1 to 10).map(i => s"""{"a":$i, "b":"str$i"}"""))
-      spark.read.json(rdd).createOrReplaceTempView("jt")
+      hiveContext.read.json(rdd).createOrReplaceTempView("jt")
       val outputs = sql(
         s"""
            |EXPLAIN EXTENDED
@@ -92,7 +92,7 @@ class HiveExplainSuite extends QueryTest with SQLTestUtils with TestHiveSingleto
       val shouldContain =
         "== Parsed Logical Plan ==" :: "== Analyzed Logical Plan ==" :: "Subquery" ::
         "== Optimized Logical Plan ==" :: "== Physical Plan ==" ::
-        "CreateHiveTableAsSelect" :: "InsertIntoHiveTable" :: "jt" :: Nil
+        "CreateTableAsSelect" :: "InsertIntoHiveTable" :: "jt" :: Nil
       for (key <- shouldContain) {
         assert(outputs.contains(key), s"$key doesn't exist in result")
       }

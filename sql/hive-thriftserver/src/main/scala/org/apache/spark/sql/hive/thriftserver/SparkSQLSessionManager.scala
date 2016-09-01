@@ -79,14 +79,14 @@ private[hive] class SparkSQLSessionManager(hiveServer: HiveServer2, sqlContext: 
       sqlContext.newSession()
     }
     ctx.setConf("spark.sql.hive.version", HiveUtils.hiveExecutionVersion)
-    sparkSqlOperationManager.sessionToContexts.put(sessionHandle, ctx)
+    sparkSqlOperationManager.sessionToContexts += sessionHandle -> ctx
     sessionHandle
   }
 
   override def closeSession(sessionHandle: SessionHandle) {
     HiveThriftServer2.listener.onSessionClosed(sessionHandle.getSessionId.toString)
     super.closeSession(sessionHandle)
-    sparkSqlOperationManager.sessionToActivePool.remove(sessionHandle)
+    sparkSqlOperationManager.sessionToActivePool -= sessionHandle
     sparkSqlOperationManager.sessionToContexts.remove(sessionHandle)
   }
 }

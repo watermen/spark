@@ -418,7 +418,6 @@ object RandomRDDs {
   }
 
   /**
-   * :: DeveloperApi ::
    * [[RandomRDDs#randomJavaRDD]] with the default seed.
    */
   @DeveloperApi
@@ -432,16 +431,15 @@ object RandomRDDs {
   }
 
   /**
-   * :: DeveloperApi ::
    * [[RandomRDDs#randomJavaRDD]] with the default seed & numPartitions
    */
   @DeveloperApi
   @Since("1.6.0")
   def randomJavaRDD[T](
-      jsc: JavaSparkContext,
-      generator: RandomDataGenerator[T],
-      size: Long): JavaRDD[T] = {
-    randomJavaRDD(jsc, generator, size, 0)
+    jsc: JavaSparkContext,
+    generator: RandomDataGenerator[T],
+    size: Long): JavaRDD[T] = {
+    randomJavaRDD(jsc, generator, size, 0);
   }
 
   // TODO Generate RDD[Vector] from multivariate distributions.
@@ -856,7 +854,6 @@ object RandomRDDs {
   }
 
   /**
-   * :: DeveloperApi ::
    * Java-friendly version of [[RandomRDDs#randomVectorRDD]].
    */
   @DeveloperApi
@@ -872,7 +869,6 @@ object RandomRDDs {
   }
 
   /**
-   * :: DeveloperApi ::
    * [[RandomRDDs#randomJavaVectorRDD]] with the default seed.
    */
   @DeveloperApi
@@ -887,7 +883,6 @@ object RandomRDDs {
   }
 
   /**
-   * :: DeveloperApi ::
    * [[RandomRDDs#randomJavaVectorRDD]] with the default number of partitions and the default seed.
    */
   @DeveloperApi

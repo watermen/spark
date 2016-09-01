@@ -29,6 +29,7 @@ import scala.Tuple2;
 
 import com.google.common.io.Files;
 
+import org.apache.spark.Accumulator;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaSparkContext;
@@ -40,7 +41,6 @@ import org.apache.spark.streaming.api.java.JavaDStream;
 import org.apache.spark.streaming.api.java.JavaPairDStream;
 import org.apache.spark.streaming.api.java.JavaReceiverInputDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
-import org.apache.spark.util.LongAccumulator;
 
 /**
  * Use this singleton to get or register a Broadcast variable.
@@ -67,13 +67,13 @@ class JavaWordBlacklist {
  */
 class JavaDroppedWordsCounter {
 
-  private static volatile LongAccumulator instance = null;
+  private static volatile Accumulator<Integer> instance = null;
 
-  public static LongAccumulator getInstance(JavaSparkContext jsc) {
+  public static Accumulator<Integer> getInstance(JavaSparkContext jsc) {
     if (instance == null) {
       synchronized (JavaDroppedWordsCounter.class) {
         if (instance == null) {
-          instance = jsc.sc().longAccumulator("WordsInBlacklistCounter");
+          instance = jsc.accumulator(0, "WordsInBlacklistCounter");
         }
       }
     }
@@ -158,7 +158,7 @@ public final class JavaRecoverableNetworkWordCount {
         final Broadcast<List<String>> blacklist =
             JavaWordBlacklist.getInstance(new JavaSparkContext(rdd.context()));
         // Get or register the droppedWordsCounter Accumulator
-        final LongAccumulator droppedWordsCounter =
+        final Accumulator<Integer> droppedWordsCounter =
             JavaDroppedWordsCounter.getInstance(new JavaSparkContext(rdd.context()));
         // Use blacklist to drop words and use droppedWordsCounter to count them
         String counts = rdd.filter(new Function<Tuple2<String, Integer>, Boolean>() {

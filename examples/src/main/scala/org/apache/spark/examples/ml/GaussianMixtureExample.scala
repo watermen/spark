@@ -21,8 +21,8 @@ package org.apache.spark.examples.ml
 
 // $example on$
 import org.apache.spark.ml.clustering.GaussianMixture
-// $example off$
 import org.apache.spark.sql.SparkSession
+// $example off$
 
 /**
  * An example demonstrating Gaussian Mixture Model (GMM).
@@ -33,10 +33,8 @@ import org.apache.spark.sql.SparkSession
  */
 object GaussianMixtureExample {
   def main(args: Array[String]): Unit = {
-    val spark = SparkSession
-        .builder
-        .appName(s"${this.getClass.getSimpleName}")
-        .getOrCreate()
+    // Creates a SparkSession
+    val spark = SparkSession.builder.appName(s"${this.getClass.getSimpleName}").getOrCreate()
 
     // $example on$
     // Loads data
@@ -49,8 +47,8 @@ object GaussianMixtureExample {
 
     // output parameters of mixture model model
     for (i <- 0 until model.getK) {
-      println(s"Gaussian $i:\nweight=${model.weights(i)}\n" +
-          s"mu=${model.gaussians(i).mean}\nsigma=\n${model.gaussians(i).cov}\n")
+      println("weight=%f\nmu=%s\nsigma=\n%s\n" format
+        (model.weights(i), model.gaussians(i).mean, model.gaussians(i).cov))
     }
     // $example off$
 

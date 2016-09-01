@@ -181,11 +181,8 @@ case class DropFunctionCommand(
  * '|' is for alternation.
  * For example, "show functions like 'yea*|windo*'" will return "window" and "year".
  */
-case class ShowFunctionsCommand(
-    db: Option[String],
-    pattern: Option[String],
-    showUserFunctions: Boolean,
-    showSystemFunctions: Boolean) extends RunnableCommand {
+case class ShowFunctionsCommand(db: Option[String], pattern: Option[String])
+  extends RunnableCommand {
 
   override val output: Seq[Attribute] = {
     val schema = StructType(StructField("function", StringType, nullable = false) :: Nil)
@@ -199,10 +196,7 @@ case class ShowFunctionsCommand(
     val functionNames =
       sparkSession.sessionState.catalog
         .listFunctions(dbName, pattern.getOrElse("*"))
-        .collect {
-          case (f, "USER") if showUserFunctions => f.unquotedString
-          case (f, "SYSTEM") if showSystemFunctions => f.unquotedString
-        }
+        .map(_.unquotedString)
     // The session catalog caches some persistent functions in the FunctionRegistry
     // so there can be duplicates.
     functionNames.distinct.sorted.map(Row(_))

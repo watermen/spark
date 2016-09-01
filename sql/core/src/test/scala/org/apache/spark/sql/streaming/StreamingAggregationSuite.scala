@@ -20,18 +20,19 @@ package org.apache.spark.sql.streaming
 import org.scalatest.BeforeAndAfterAll
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.AnalysisException
-import org.apache.spark.sql.InternalOutputModes._
+import org.apache.spark.sql.StreamTest
+import org.apache.spark.sql.catalyst.analysis.Update
 import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.execution.streaming.state.StateStore
 import org.apache.spark.sql.expressions.scalalang.typed
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.test.SharedSQLContext
 
 object FailureSinglton {
   var firstTime = true
 }
 
-class StreamingAggregationSuite extends StreamTest with BeforeAndAfterAll {
+class StreamingAggregationSuite extends StreamTest with SharedSQLContext with BeforeAndAfterAll {
 
   override def afterAll(): Unit = {
     super.afterAll()
@@ -40,7 +41,9 @@ class StreamingAggregationSuite extends StreamTest with BeforeAndAfterAll {
 
   import testImplicits._
 
-  test("simple count, update mode") {
+  override val outputMode = Update
+
+  test("simple count") {
     val inputData = MemoryStream[Int]
 
     val aggregated =
@@ -49,7 +52,7 @@ class StreamingAggregationSuite extends StreamTest with BeforeAndAfterAll {
         .agg(count("*"))
         .as[(Int, Long)]
 
-    testStream(aggregated, Update)(
+    testStream(aggregated)(
       AddData(inputData, 3),
       CheckLastBatch((3, 1)),
       AddData(inputData, 3, 2),
@@ -64,71 +67,6 @@ class StreamingAggregationSuite extends StreamTest with BeforeAndAfterAll {
     )
   }
 
-  test("simple count, complete mode") {
-    val inputData = MemoryStream[Int]
-
-    val aggregated =
-      inputData.toDF()
-        .groupBy($"value")
-        .agg(count("*"))
-        .as[(Int, Long)]
-
-    testStream(aggregated, Complete)(
-      AddData(inputData, 3),
-      CheckLastBatch((3, 1)),
-      AddData(inputData, 2),
-      CheckLastBatch((3, 1), (2, 1)),
-      StopStream,
-      StartStream(),
-      AddData(inputData, 3, 2, 1),
-      CheckLastBatch((3, 2), (2, 2), (1, 1)),
-      AddData(inputData, 4, 4, 4, 4),
-      CheckLastBatch((4, 4), (3, 2), (2, 2), (1, 1))
-    )
-  }
-
-  test("simple count, append mode") {
-    val inputData = MemoryStream[Int]
-
-    val aggregated =
-      inputData.toDF()
-        .groupBy($"value")
-        .agg(count("*"))
-        .as[(Int, Long)]
-
-    val e = intercept[AnalysisException] {
-      testStream(aggregated, Append)()
-    }
-    Seq("append", "not supported").foreach { m =>
-      assert(e.getMessage.toLowerCase.contains(m.toLowerCase))
-    }
-  }
-
-  test("sort after aggregate in complete mode") {
-    val inputData = MemoryStream[Int]
-
-    val aggregated =
-      inputData.toDF()
-        .groupBy($"value")
-        .agg(count("*"))
-        .toDF("value", "count")
-        .orderBy($"count".desc)
-        .as[(Int, Long)]
-
-    testStream(aggregated, Complete)(
-      AddData(inputData, 3),
-      CheckLastBatch(isSorted = true, (3, 1)),
-      AddData(inputData, 2, 3),
-      CheckLastBatch(isSorted = true, (3, 2), (2, 1)),
-      StopStream,
-      StartStream(),
-      AddData(inputData, 3, 2, 1),
-      CheckLastBatch(isSorted = true, (3, 3), (2, 2), (1, 1)),
-      AddData(inputData, 4, 4, 4, 4),
-      CheckLastBatch(isSorted = true, (4, 4), (3, 3), (2, 2), (1, 1))
-    )
-  }
-
   test("multiple keys") {
     val inputData = MemoryStream[Int]
 
@@ -138,7 +76,7 @@ class StreamingAggregationSuite extends StreamTest with BeforeAndAfterAll {
         .agg(count("*"))
         .as[(Int, Int, Long)]
 
-    testStream(aggregated, Update)(
+    testStream(aggregated)(
       AddData(inputData, 1, 2),
       CheckLastBatch((1, 2, 1), (2, 3, 1)),
       AddData(inputData, 1, 2),
@@ -163,7 +101,7 @@ class StreamingAggregationSuite extends StreamTest with BeforeAndAfterAll {
           .agg(count("*"))
           .as[(Int, Long)]
 
-    testStream(aggregated, Update)(
+    testStream(aggregated)(
       StartStream(),
       AddData(inputData, 1, 2, 3, 4),
       ExpectFailure[SparkException](),
@@ -176,7 +114,7 @@ class StreamingAggregationSuite extends StreamTest with BeforeAndAfterAll {
     val inputData = MemoryStream[(String, Int)]
     val aggregated = inputData.toDS().groupByKey(_._1).agg(typed.sumLong(_._2))
 
-    testStream(aggregated, Update)(
+    testStream(aggregated)(
       AddData(inputData, ("a", 10), ("a", 20), ("b", 1), ("b", 2), ("c", 1)),
       CheckLastBatch(("a", 30), ("b", 3), ("c", 1))
     )

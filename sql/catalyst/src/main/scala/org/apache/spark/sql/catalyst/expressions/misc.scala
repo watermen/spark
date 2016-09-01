@@ -175,12 +175,11 @@ case class Crc32(child: Expression) extends UnaryExpression with ImplicitCastInp
 
   override def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode = {
     val CRC32 = "java.util.zip.CRC32"
-    val checksum = ctx.freshName("checksum")
     nullSafeCodeGen(ctx, ev, value => {
       s"""
-        $CRC32 $checksum = new $CRC32();
-        $checksum.update($value, 0, $value.length);
-        ${ev.value} = $checksum.getValue();
+        $CRC32 checksum = new $CRC32();
+        checksum.update($value, 0, $value.length);
+        ${ev.value} = checksum.getValue();
       """
     })
   }
@@ -554,7 +553,7 @@ object XxHash64Function extends InterpretedHashFunction {
 @ExpressionDescription(
   usage = "_FUNC_() - Returns the current database.",
   extended = "> SELECT _FUNC_()")
-case class CurrentDatabase() extends LeafExpression with Unevaluable {
+private[sql] case class CurrentDatabase() extends LeafExpression with Unevaluable {
   override def dataType: DataType = StringType
   override def foldable: Boolean = true
   override def nullable: Boolean = false

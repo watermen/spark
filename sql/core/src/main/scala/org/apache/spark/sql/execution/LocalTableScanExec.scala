@@ -26,20 +26,16 @@ import org.apache.spark.sql.execution.metric.SQLMetrics
 /**
  * Physical plan node for scanning data from a local collection.
  */
-case class LocalTableScanExec(
+private[sql] case class LocalTableScanExec(
     output: Seq[Attribute],
     rows: Seq[InternalRow]) extends LeafExecNode {
 
-  override lazy val metrics = Map(
+  private[sql] override lazy val metrics = Map(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
 
   private val unsafeRows: Array[InternalRow] = {
-    if (rows.isEmpty) {
-      Array.empty
-    } else {
-      val proj = UnsafeProjection.create(output, output)
-      rows.map(r => proj(r).copy()).toArray
-    }
+    val proj = UnsafeProjection.create(output, output)
+    rows.map(r => proj(r).copy()).toArray
   }
 
   private lazy val rdd = sqlContext.sparkContext.parallelize(unsafeRows)
@@ -49,14 +45,6 @@ case class LocalTableScanExec(
     rdd.map { r =>
       numOutputRows += 1
       r
-    }
-  }
-
-  override protected def stringArgs: Iterator[Any] = {
-    if (rows.isEmpty) {
-      Iterator("<empty>", output)
-    } else {
-      Iterator(output)
     }
   }
 

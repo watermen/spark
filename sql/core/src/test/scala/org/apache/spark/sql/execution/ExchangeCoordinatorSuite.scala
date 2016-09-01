@@ -27,12 +27,12 @@ import org.apache.spark.sql.internal.SQLConf
 
 class ExchangeCoordinatorSuite extends SparkFunSuite with BeforeAndAfterAll {
 
-  private var originalActiveSparkSession: Option[SparkSession] = _
-  private var originalInstantiatedSparkSession: Option[SparkSession] = _
+  private var originalActiveSQLContext: Option[SparkSession] = _
+  private var originalInstantiatedSQLContext: Option[SparkSession] = _
 
   override protected def beforeAll(): Unit = {
-    originalActiveSparkSession = SparkSession.getActiveSession
-    originalInstantiatedSparkSession = SparkSession.getDefaultSession
+    originalActiveSQLContext = SparkSession.getActiveSession
+    originalInstantiatedSQLContext = SparkSession.getDefaultSession
 
     SparkSession.clearActiveSession()
     SparkSession.clearDefaultSession()
@@ -40,8 +40,8 @@ class ExchangeCoordinatorSuite extends SparkFunSuite with BeforeAndAfterAll {
 
   override protected def afterAll(): Unit = {
     // Set these states back.
-    originalActiveSparkSession.foreach(ctx => SparkSession.setActiveSession(ctx))
-    originalInstantiatedSparkSession.foreach(ctx => SparkSession.setDefaultSession(ctx))
+    originalActiveSQLContext.foreach(ctx => SparkSession.setActiveSession(ctx))
+    originalInstantiatedSQLContext.foreach(ctx => SparkSession.setDefaultSession(ctx))
   }
 
   private def checkEstimation(
@@ -249,7 +249,7 @@ class ExchangeCoordinatorSuite extends SparkFunSuite with BeforeAndAfterAll {
     }
   }
 
-  def withSparkSession(
+  def withSQLContext(
       f: SparkSession => Unit,
       targetNumPostShufflePartitions: Int,
       minNumPostShufflePartitions: Option[Int]): Unit = {
@@ -322,7 +322,7 @@ class ExchangeCoordinatorSuite extends SparkFunSuite with BeforeAndAfterAll {
         }
       }
 
-      withSparkSession(test, 2000, minNumPostShufflePartitions)
+      withSQLContext(test, 2000, minNumPostShufflePartitions)
     }
 
     test(s"determining the number of reducers: join operator$testNameNote") {
@@ -373,7 +373,7 @@ class ExchangeCoordinatorSuite extends SparkFunSuite with BeforeAndAfterAll {
         }
       }
 
-      withSparkSession(test, 16384, minNumPostShufflePartitions)
+      withSQLContext(test, 16384, minNumPostShufflePartitions)
     }
 
     test(s"determining the number of reducers: complex query 1$testNameNote") {
@@ -425,7 +425,7 @@ class ExchangeCoordinatorSuite extends SparkFunSuite with BeforeAndAfterAll {
         }
       }
 
-      withSparkSession(test, 6644, minNumPostShufflePartitions)
+      withSQLContext(test, 6644, minNumPostShufflePartitions)
     }
 
     test(s"determining the number of reducers: complex query 2$testNameNote") {
@@ -477,7 +477,7 @@ class ExchangeCoordinatorSuite extends SparkFunSuite with BeforeAndAfterAll {
         }
       }
 
-      withSparkSession(test, 6144, minNumPostShufflePartitions)
+      withSQLContext(test, 6144, minNumPostShufflePartitions)
     }
   }
 }

@@ -27,9 +27,6 @@ import org.apache.spark.annotation.DeveloperApi
 @DeveloperApi
 sealed abstract class AttributeType(val name: String)
 
-/**
- * :: DeveloperApi ::
- */
 @DeveloperApi
 object AttributeType {
 

@@ -337,7 +337,6 @@ pyspark_sql = Module(
         "pyspark.sql.group",
         "pyspark.sql.functions",
         "pyspark.sql.readwriter",
-        "pyspark.sql.streaming",
         "pyspark.sql.window",
         "pyspark.sql.tests",
     ]
@@ -456,14 +455,6 @@ yarn = Module(
     test_tags=[
         "org.apache.spark.tags.ExtendedYarnTest"
     ]
-)
-
-mesos = Module(
-    name="mesos",
-    dependencies=[],
-    source_file_regexes=["mesos/"],
-    build_profile_flags=["-Pmesos"],
-    sbt_test_goals=["mesos/test"]
 )
 
 # The root module is a dummy module which is used to run all of the tests.

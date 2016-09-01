@@ -20,7 +20,6 @@ package org.apache.spark.sql.execution
 import org.apache.spark.SparkContext
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.datasources.{DataSourceStrategy, FileSourceStrategy}
 import org.apache.spark.sql.internal.SQLConf
 
@@ -42,18 +41,6 @@ class SparkPlanner(
       JoinSelection ::
       InMemoryScans ::
       BasicOperators :: Nil)
-
-  override protected def collectPlaceholders(plan: SparkPlan): Seq[(SparkPlan, LogicalPlan)] = {
-    plan.collect {
-      case placeholder @ PlanLater(logicalPlan) => placeholder -> logicalPlan
-    }
-  }
-
-  override protected def prunePlans(plans: Iterator[SparkPlan]): Iterator[SparkPlan] = {
-    // TODO: We will need to prune bad plans when we improve plan space exploration
-    //       to prevent combinatorial explosion.
-    plans
-  }
 
   /**
    * Used to build table scan operators where complex projection and filtering are done using

@@ -214,11 +214,7 @@ class DAGSchedulerSuite extends SparkFunSuite with LocalSparkContext with Timeou
     results.clear()
     securityMgr = new SecurityManager(conf)
     broadcastManager = new BroadcastManager(true, conf, securityMgr)
-    mapOutputTracker = new MapOutputTrackerMaster(conf, broadcastManager, true) {
-      override def sendTracker(message: Any): Unit = {
-        // no-op, just so we can stop this to avoid leaking threads
-      }
-    }
+    mapOutputTracker = new MapOutputTrackerMaster(conf, broadcastManager, true)
     scheduler = new DAGScheduler(
       sc,
       taskScheduler,
@@ -232,9 +228,6 @@ class DAGSchedulerSuite extends SparkFunSuite with LocalSparkContext with Timeou
   override def afterEach(): Unit = {
     try {
       scheduler.stop()
-      dagEventProcessLoopTester.stop()
-      mapOutputTracker.stop()
-      broadcastManager.stop()
     } finally {
       super.afterEach()
     }
@@ -367,12 +360,12 @@ class DAGSchedulerSuite extends SparkFunSuite with LocalSparkContext with Timeou
 
     submit(rddD, Array(0))
 
-    assert(scheduler.shuffleIdToMapStage.size === 3)
+    assert(scheduler.shuffleToMapStage.size === 3)
     assert(scheduler.activeJobs.size === 1)
 
-    val mapStageA = scheduler.shuffleIdToMapStage(s_A)
-    val mapStageB = scheduler.shuffleIdToMapStage(s_B)
-    val mapStageC = scheduler.shuffleIdToMapStage(s_C)
+    val mapStageA = scheduler.shuffleToMapStage(s_A)
+    val mapStageB = scheduler.shuffleToMapStage(s_B)
+    val mapStageC = scheduler.shuffleToMapStage(s_C)
     val finalStage = scheduler.activeJobs.head.finalStage
 
     assert(mapStageA.parents.isEmpty)
@@ -1609,11 +1602,13 @@ class DAGSchedulerSuite extends SparkFunSuite with LocalSparkContext with Timeou
   }
 
   test("misbehaved accumulator should not crash DAGScheduler and SparkContext") {
-    val acc = new LongAccumulator {
-      override def add(v: java.lang.Long): Unit = throw new DAGSchedulerSuiteDummyException
-      override def add(v: Long): Unit = throw new DAGSchedulerSuiteDummyException
-    }
-    sc.register(acc)
+    val acc = new Accumulator[Int](0, new AccumulatorParam[Int] {
+      override def addAccumulator(t1: Int, t2: Int): Int = t1 + t2
+      override def zero(initialValue: Int): Int = 0
+      override def addInPlace(r1: Int, r2: Int): Int = {
+        throw new DAGSchedulerSuiteDummyException
+      }
+    })
 
     // Run this on executors
     sc.parallelize(1 to 10, 2).foreach { item => acc.add(1) }
@@ -1717,7 +1712,7 @@ class DAGSchedulerSuite extends SparkFunSuite with LocalSparkContext with Timeou
   }
 
   test("reduce tasks should be placed locally with map output") {
-    // Create a shuffleMapRdd with 1 partition
+    // Create an shuffleMapRdd with 1 partition
     val shuffleMapRdd = new MyRDD(sc, 1, Nil)
     val shuffleDep = new ShuffleDependency(shuffleMapRdd, new HashPartitioner(2))
     val shuffleId = shuffleDep.shuffleId
@@ -1738,7 +1733,7 @@ class DAGSchedulerSuite extends SparkFunSuite with LocalSparkContext with Timeou
 
   test("reduce task locality preferences should only include machines with largest map outputs") {
     val numMapTasks = 4
-    // Create a shuffleMapRdd with more partitions
+    // Create an shuffleMapRdd with more partitions
     val shuffleMapRdd = new MyRDD(sc, numMapTasks, Nil)
     val shuffleDep = new ShuffleDependency(shuffleMapRdd, new HashPartitioner(1))
     val shuffleId = shuffleDep.shuffleId
@@ -2031,37 +2026,6 @@ class DAGSchedulerSuite extends SparkFunSuite with LocalSparkContext with Timeou
   }
 
   /**
-   * Checks the DAGScheduler's internal logic for traversing a RDD DAG by making sure that
-   * getShuffleDependencies correctly returns the direct shuffle dependencies of a particular
-   * RDD. The test creates the following RDD graph (where n denotes a narrow dependency and s
-   * denotes a shuffle dependency):
-   *
-   * A <------------s---------,
-   *                           \
-   * B <--s-- C <--s-- D <--n---`-- E
-   *
-   * Here, the direct shuffle dependency of C is just the shuffle dependency on B. The direct
-   * shuffle dependencies of E are the shuffle dependency on A and the shuffle dependency on C.
-   */
-  test("getShuffleDependencies correctly returns only direct shuffle parents") {
-    val rddA = new MyRDD(sc, 2, Nil)
-    val shuffleDepA = new ShuffleDependency(rddA, new HashPartitioner(1))
-    val rddB = new MyRDD(sc, 2, Nil)
-    val shuffleDepB = new ShuffleDependency(rddB, new HashPartitioner(1))
-    val rddC = new MyRDD(sc, 1, List(shuffleDepB))
-    val shuffleDepC = new ShuffleDependency(rddC, new HashPartitioner(1))
-    val rddD = new MyRDD(sc, 1, List(shuffleDepC))
-    val narrowDepD = new OneToOneDependency(rddD)
-    val rddE = new MyRDD(sc, 1, List(shuffleDepA, narrowDepD), tracker = mapOutputTracker)
-
-    assert(scheduler.getShuffleDependencies(rddA) === Set())
-    assert(scheduler.getShuffleDependencies(rddB) === Set())
-    assert(scheduler.getShuffleDependencies(rddC) === Set(shuffleDepB))
-    assert(scheduler.getShuffleDependencies(rddD) === Set(shuffleDepC))
-    assert(scheduler.getShuffleDependencies(rddE) === Set(shuffleDepA, shuffleDepC))
-  }
-
-  /**
    * Assert that the supplied TaskSet has exactly the given hosts as its preferred locations.
    * Note that this checks only the host and not the executor ID.
    */
@@ -2079,7 +2043,7 @@ class DAGSchedulerSuite extends SparkFunSuite with LocalSparkContext with Timeou
     assert(scheduler.jobIdToStageIds.isEmpty)
     assert(scheduler.stageIdToStage.isEmpty)
     assert(scheduler.runningStages.isEmpty)
-    assert(scheduler.shuffleIdToMapStage.isEmpty)
+    assert(scheduler.shuffleToMapStage.isEmpty)
     assert(scheduler.waitingStages.isEmpty)
     assert(scheduler.outputCommitCoordinator.isEmpty)
   }

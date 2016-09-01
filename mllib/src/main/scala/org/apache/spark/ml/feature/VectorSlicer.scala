@@ -17,7 +17,7 @@
 
 package org.apache.spark.ml.feature
 
-import org.apache.spark.annotation.Since
+import org.apache.spark.annotation.{Experimental, Since}
 import org.apache.spark.ml.Transformer
 import org.apache.spark.ml.attribute.{Attribute, AttributeGroup}
 import org.apache.spark.ml.linalg._
@@ -29,6 +29,7 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.StructType
 
 /**
+ * :: Experimental ::
  * This class takes a feature vector and outputs a new feature vector with a subarray of the
  * original features.
  *
@@ -39,11 +40,10 @@ import org.apache.spark.sql.types.StructType
  * The output vector will order features with the selected indices first (in the order given),
  * followed by the selected names (in the order given).
  */
-@Since("1.5.0")
-final class VectorSlicer @Since("1.5.0") (@Since("1.5.0") override val uid: String)
+@Experimental
+final class VectorSlicer(override val uid: String)
   extends Transformer with HasInputCol with HasOutputCol with DefaultParamsWritable {
 
-  @Since("1.5.0")
   def this() = this(Identifiable.randomUID("vectorSlicer"))
 
   /**
@@ -52,7 +52,6 @@ final class VectorSlicer @Since("1.5.0") (@Since("1.5.0") override val uid: Stri
    * Default: Empty array
    * @group param
    */
-  @Since("1.5.0")
   val indices = new IntArrayParam(this, "indices",
     "An array of indices to select features from a vector column." +
       " There can be no overlap with names.", VectorSlicer.validIndices)
@@ -60,11 +59,9 @@ final class VectorSlicer @Since("1.5.0") (@Since("1.5.0") override val uid: Stri
   setDefault(indices -> Array.empty[Int])
 
   /** @group getParam */
-  @Since("1.5.0")
   def getIndices: Array[Int] = $(indices)
 
   /** @group setParam */
-  @Since("1.5.0")
   def setIndices(value: Array[Int]): this.type = set(indices, value)
 
   /**
@@ -74,7 +71,6 @@ final class VectorSlicer @Since("1.5.0") (@Since("1.5.0") override val uid: Stri
    * Default: Empty Array
    * @group param
    */
-  @Since("1.5.0")
   val names = new StringArrayParam(this, "names",
     "An array of feature names to select features from a vector column." +
       " There can be no overlap with indices.", VectorSlicer.validNames)
@@ -82,19 +78,15 @@ final class VectorSlicer @Since("1.5.0") (@Since("1.5.0") override val uid: Stri
   setDefault(names -> Array.empty[String])
 
   /** @group getParam */
-  @Since("1.5.0")
   def getNames: Array[String] = $(names)
 
   /** @group setParam */
-  @Since("1.5.0")
   def setNames(value: Array[String]): this.type = set(names, value)
 
   /** @group setParam */
-  @Since("1.5.0")
   def setInputCol(value: String): this.type = set(inputCol, value)
 
   /** @group setParam */
-  @Since("1.5.0")
   def setOutputCol(value: String): this.type = set(outputCol, value)
 
   @Since("2.0.0")
@@ -142,7 +134,6 @@ final class VectorSlicer @Since("1.5.0") (@Since("1.5.0") override val uid: Stri
     indFeatures ++ nameFeatures
   }
 
-  @Since("1.5.0")
   override def transformSchema(schema: StructType): StructType = {
     require($(indices).length > 0 || $(names).length > 0,
       s"VectorSlicer requires that at least one feature be selected.")
@@ -157,7 +148,6 @@ final class VectorSlicer @Since("1.5.0") (@Since("1.5.0") override val uid: Stri
     StructType(outputFields)
   }
 
-  @Since("1.5.0")
   override def copy(extra: ParamMap): VectorSlicer = defaultCopy(extra)
 }
 

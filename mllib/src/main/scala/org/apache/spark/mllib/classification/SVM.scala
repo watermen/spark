@@ -44,7 +44,7 @@ class SVMModel @Since("1.1.0") (
 
   /**
    * Sets the threshold that separates positive predictions from negative predictions. An example
-   * with prediction score greater than or equal to this threshold is identified as a positive,
+   * with prediction score greater than or equal to this threshold is identified as an positive,
    * and negative otherwise. The default value is 0.0.
    */
   @Since("1.0.0")
@@ -72,7 +72,7 @@ class SVMModel @Since("1.1.0") (
       dataMatrix: Vector,
       weightMatrix: Vector,
       intercept: Double) = {
-    val margin = weightMatrix.asBreeze.dot(dataMatrix.asBreeze) + intercept
+    val margin = weightMatrix.toBreeze.dot(dataMatrix.toBreeze) + intercept
     threshold match {
       case Some(t) => if (margin > t) 1.0 else 0.0
       case None => margin

@@ -18,32 +18,21 @@
 package org.apache.spark.sql.hive.execution
 
 import org.apache.spark.sql.{AnalysisException, QueryTest, Row, SaveMode}
-import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException
-import org.apache.spark.sql.catalyst.catalog.{CatalogStorageFormat, CatalogTable, CatalogTableType}
+import org.apache.spark.sql.catalyst.parser.ParseException
 import org.apache.spark.sql.hive.test.TestHiveSingleton
 import org.apache.spark.sql.test.SQLTestUtils
-import org.apache.spark.sql.types.StructType
 
 class HiveCommandSuite extends QueryTest with SQLTestUtils with TestHiveSingleton {
   import testImplicits._
 
   protected override def beforeAll(): Unit = {
     super.beforeAll()
-
-    // Use catalog to create table instead of SQL string here, because we don't support specifying
-    // table properties for data source table with SQL API now.
-    hiveContext.sessionState.catalog.createTable(
-      CatalogTable(
-        identifier = TableIdentifier("parquet_tab1"),
-        tableType = CatalogTableType.MANAGED,
-        storage = CatalogStorageFormat.empty,
-        schema = new StructType().add("c1", "int").add("c2", "string"),
-        provider = Some("parquet"),
-        properties = Map("my_key1" -> "v1")
-      ),
-      ignoreIfExists = false
-    )
+    sql(
+      """
+        |CREATE TABLE parquet_tab1 (c1 INT, c2 STRING)
+        |USING org.apache.spark.sql.parquet.DefaultSource
+      """.stripMargin)
 
     sql(
       """
@@ -112,14 +101,25 @@ class HiveCommandSuite extends QueryTest with SQLTestUtils with TestHiveSingleto
 
   test("show tblproperties of data source tables - basic") {
     checkAnswer(
-      sql("SHOW TBLPROPERTIES parquet_tab1").filter(s"key = 'my_key1'"),
-      Row("my_key1", "v1") :: Nil
+      sql("SHOW TBLPROPERTIES parquet_tab1")
+        .filter(s"key = 'spark.sql.sources.provider'"),
+      Row("spark.sql.sources.provider", "org.apache.spark.sql.parquet.DefaultSource") :: Nil
     )
 
     checkAnswer(
-      sql(s"SHOW TBLPROPERTIES parquet_tab1('my_key1')"),
-      Row("v1") :: Nil
+      sql("SHOW TBLPROPERTIES parquet_tab1(spark.sql.sources.provider)"),
+      Row("org.apache.spark.sql.parquet.DefaultSource") :: Nil
     )
+
+    checkAnswer(
+      sql("SHOW TBLPROPERTIES parquet_tab1")
+        .filter(s"key = 'spark.sql.sources.schema.numParts'"),
+      Row("spark.sql.sources.schema.numParts", "1") :: Nil
+    )
+
+    checkAnswer(
+      sql("SHOW TBLPROPERTIES parquet_tab1('spark.sql.sources.schema.numParts')"),
+      Row("1"))
   }
 
   test("show tblproperties for datasource table - errors") {
@@ -141,7 +141,7 @@ class HiveCommandSuite extends QueryTest with SQLTestUtils with TestHiveSingleto
   }
 
   test("show tblproperties for spark temporary table - empty row") {
-    withTempView("parquet_temp") {
+    withTempTable("parquet_temp") {
       sql(
         """
           |CREATE TEMPORARY TABLE parquet_temp (c1 INT, c2 STRING)
@@ -399,7 +399,7 @@ class HiveCommandSuite extends QueryTest with SQLTestUtils with TestHiveSingleto
   }
 
   test("show partitions - empty row") {
-    withTempView("parquet_temp") {
+    withTempTable("parquet_temp") {
       sql(
         """
           |CREATE TEMPORARY TABLE parquet_temp (c1 INT, c2 STRING)
@@ -424,7 +424,7 @@ class HiveCommandSuite extends QueryTest with SQLTestUtils with TestHiveSingleto
       val message4 = intercept[AnalysisException] {
         sql("SHOW PARTITIONS parquet_view1")
       }.getMessage
-      assert(message4.contains("is not allowed on a view"))
+      assert(message4.contains("is not allowed on a view or index table"))
     }
   }
 

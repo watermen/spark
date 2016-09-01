@@ -27,54 +27,6 @@ elapsedSecs <- function() {
   proc.time()[3]
 }
 
-compute <- function(mode, partition, serializer, deserializer, key,
-             colNames, computeFunc, inputData) {
-  if (mode > 0) {
-    if (deserializer == "row") {
-      # Transform the list of rows into a data.frame
-      # Note that the optional argument stringsAsFactors for rbind is
-      # available since R 3.2.4. So we set the global option here.
-      oldOpt <- getOption("stringsAsFactors")
-      options(stringsAsFactors = FALSE)
-      inputData <- do.call(rbind.data.frame, inputData)
-      options(stringsAsFactors = oldOpt)
-
-      names(inputData) <- colNames
-    } else {
-      # Check to see if inputData is a valid data.frame
-      stopifnot(deserializer == "byte")
-      stopifnot(class(inputData) == "data.frame")
-    }
-
-    if (mode == 2) {
-      output <- computeFunc(key, inputData)
-    } else {
-      output <- computeFunc(inputData)
-    }
-    if (serializer == "row") {
-      # Transform the result data.frame back to a list of rows
-      output <- split(output, seq(nrow(output)))
-    } else {
-      # Serialize the ouput to a byte array
-      stopifnot(serializer == "byte")
-    }
-  } else {
-    output <- computeFunc(partition, inputData)
-  }
-  return (output)
-}
-
-outputResult <- function(serializer, output, outputCon) {
-  if (serializer == "byte") {
-    SparkR:::writeRawSerialize(outputCon, output)
-  } else if (serializer == "row") {
-    SparkR:::writeRowSerialize(outputCon, output)
-  } else {
-    # write lines one-by-one with flag
-    lapply(output, function(line) SparkR:::writeString(outputCon, line))
-  }
-}
-
 # Constants
 specialLengths <- list(END_OF_STERAM = 0L, TIMING_DATA = -1L)
 
@@ -127,71 +79,75 @@ if (numBroadcastVars > 0) {
 
 # Timing broadcast
 broadcastElap <- elapsedSecs()
-# Initial input timing
-inputElap <- broadcastElap
 
 # If -1: read as normal RDD; if >= 0, treat as pairwise RDD and treat the int
 # as number of partitions to create.
 numPartitions <- SparkR:::readInt(inputCon)
 
-# 0 - RDD mode, 1 - dapply mode, 2 - gapply mode
-mode <- SparkR:::readInt(inputCon)
+isDataFrame <- as.logical(SparkR:::readInt(inputCon))
 
-if (mode > 0) {
+# If isDataFrame, then read column names
+if (isDataFrame) {
   colNames <- SparkR:::readObject(inputCon)
 }
 
 isEmpty <- SparkR:::readInt(inputCon)
-computeInputElapsDiff <- 0
-outputComputeElapsDiff <- 0
 
 if (isEmpty != 0) {
+
   if (numPartitions == -1) {
     if (deserializer == "byte") {
       # Now read as many characters as described in funcLen
       data <- SparkR:::readDeserialize(inputCon)
     } else if (deserializer == "string") {
       data <- as.list(readLines(inputCon))
-    } else if (deserializer == "row" && mode == 2) {
-      dataWithKeys <- SparkR:::readMultipleObjectsWithKeys(inputCon)
-      keys <- dataWithKeys$keys
-      data <- dataWithKeys$data
     } else if (deserializer == "row") {
       data <- SparkR:::readMultipleObjects(inputCon)
     }
-
     # Timing reading input data for execution
     inputElap <- elapsedSecs()
-    if (mode > 0) {
-      if (mode == 1) {
-        output <- compute(mode, partition, serializer, deserializer, NULL,
-                    colNames, computeFunc, data)
-       } else {
-        # gapply mode
-        for (i in 1:length(data)) {
-          # Timing reading input data for execution
-          inputElap <- elapsedSecs()
-          output <- compute(mode, partition, serializer, deserializer, keys[[i]],
-                      colNames, computeFunc, data[[i]])
-          computeElap <- elapsedSecs()
-          outputResult(serializer, output, outputCon)
-          outputElap <- elapsedSecs()
-          computeInputElapsDiff <-  computeInputElapsDiff + (computeElap - inputElap)
-          outputComputeElapsDiff <- outputComputeElapsDiff + (outputElap - computeElap)
-        }
+
+    if (isDataFrame) {
+      if (deserializer == "row") {
+        # Transform the list of rows into a data.frame
+        # Note that the optional argument stringsAsFactors for rbind is
+        # available since R 3.2.4. So we set the global option here.
+        oldOpt <- getOption("stringsAsFactors")
+        options(stringsAsFactors = FALSE)
+        data <- do.call(rbind.data.frame, data)
+        options(stringsAsFactors = oldOpt)
+
+        names(data) <- colNames
+      } else {
+        # Check to see if data is a valid data.frame
+        stopifnot(deserializer == "byte")
+        stopifnot(class(data) == "data.frame")
+      }
+      output <- computeFunc(data)
+      if (serializer == "row") {
+        # Transform the result data.frame back to a list of rows
+        output <- split(output, seq(nrow(output)))
+      } else {
+        # Serialize the ouput to a byte array
+        stopifnot(serializer == "byte")
       }
     } else {
-      output <- compute(mode, partition, serializer, deserializer, NULL,
-                  colNames, computeFunc, data)
+      output <- computeFunc(partition, data)
     }
-    if (mode != 2) {
-      # Not a gapply mode
-      computeElap <- elapsedSecs()
-      outputResult(serializer, output, outputCon)
-      outputElap <- elapsedSecs()
-      computeInputElapsDiff <- computeElap - inputElap
-      outputComputeElapsDiff <- outputElap - computeElap
+
+    # Timing computing
+    computeElap <- elapsedSecs()
+
+    if (serializer == "byte") {
+      SparkR:::writeRawSerialize(outputCon, output)
+    } else if (serializer == "row") {
+      SparkR:::writeRowSerialize(outputCon, output)
+    } else {
+      # write lines one-by-one with flag
+      lapply(output, function(line) SparkR:::writeString(outputCon, line))
     }
+    # Timing output
+    outputElap <- elapsedSecs()
   } else {
     if (deserializer == "byte") {
       # Now read as many characters as described in funcLen
@@ -233,9 +189,11 @@ if (isEmpty != 0) {
     }
     # Timing output
     outputElap <- elapsedSecs()
-    computeInputElapsDiff <- computeElap - inputElap
-    outputComputeElapsDiff <- outputElap - computeElap
   }
+} else {
+  inputElap <- broadcastElap
+  computeElap <- broadcastElap
+  outputElap <- broadcastElap
 }
 
 # Report timing
@@ -244,8 +202,8 @@ SparkR:::writeDouble(outputCon, bootTime)
 SparkR:::writeDouble(outputCon, initElap - bootElap)        # init
 SparkR:::writeDouble(outputCon, broadcastElap - initElap)   # broadcast
 SparkR:::writeDouble(outputCon, inputElap - broadcastElap)  # input
-SparkR:::writeDouble(outputCon, computeInputElapsDiff)    # compute
-SparkR:::writeDouble(outputCon, outputComputeElapsDiff)   # output
+SparkR:::writeDouble(outputCon, computeElap - inputElap)    # compute
+SparkR:::writeDouble(outputCon, outputElap - computeElap)   # output
 
 # End of output
 SparkR:::writeInt(outputCon, specialLengths$END_OF_STERAM)

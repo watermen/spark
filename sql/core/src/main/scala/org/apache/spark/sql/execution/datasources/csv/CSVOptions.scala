@@ -18,13 +18,12 @@
 package org.apache.spark.sql.execution.datasources.csv
 
 import java.nio.charset.StandardCharsets
-
-import org.apache.commons.lang3.time.FastDateFormat
+import java.text.SimpleDateFormat
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.{CompressionCodecs, ParseModes}
 
-private[csv] class CSVOptions(@transient private val parameters: Map[String, String])
+private[sql] class CSVOptions(@transient private val parameters: Map[String, String])
   extends Logging with Serializable {
 
   private def getChar(paramName: String, default: Char): Char = {
@@ -102,23 +101,17 @@ private[csv] class CSVOptions(@transient private val parameters: Map[String, Str
     name.map(CompressionCodecs.getCodecClassName)
   }
 
-  // Uses `FastDateFormat` which can be direct replacement for `SimpleDateFormat` and thread-safe.
-  val dateFormat: FastDateFormat =
-    FastDateFormat.getInstance(parameters.getOrElse("dateFormat", "yyyy-MM-dd"))
-
-  val timestampFormat: FastDateFormat =
-    FastDateFormat.getInstance(
-      parameters.getOrElse("timestampFormat", "yyyy-MM-dd'T'HH:mm:ss.SSSZZ"))
+  // Share date format object as it is expensive to parse date pattern.
+  val dateFormat: SimpleDateFormat = {
+    val dateFormat = parameters.get("dateFormat")
+    dateFormat.map(new SimpleDateFormat(_)).orNull
+  }
 
   val maxColumns = getInt("maxColumns", 20480)
 
   val maxCharsPerColumn = getInt("maxCharsPerColumn", 1000000)
 
   val escapeQuotes = getBool("escapeQuotes", true)
-
-  val maxMalformedLogPerPartition = getInt("maxMalformedLogPerPartition", 10)
-
-  val quoteAll = getBool("quoteAll", false)
 
   val inputBufferSize = 128
 

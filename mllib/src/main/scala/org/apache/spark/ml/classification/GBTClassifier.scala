@@ -21,7 +21,7 @@ import com.github.fommil.netlib.BLAS.{getInstance => blas}
 import org.json4s.{DefaultFormats, JObject}
 import org.json4s.JsonDSL._
 
-import org.apache.spark.annotation.Since
+import org.apache.spark.annotation.{Experimental, Since}
 import org.apache.spark.internal.Logging
 import org.apache.spark.ml.{PredictionModel, Predictor}
 import org.apache.spark.ml.feature.LabeledPoint
@@ -40,7 +40,8 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.DoubleType
 
 /**
- * Gradient-Boosted Trees (GBTs) (http://en.wikipedia.org/wiki/Gradient_boosting)
+ * :: Experimental ::
+ * [[http://en.wikipedia.org/wiki/Gradient_boosting Gradient-Boosted Trees (GBTs)]]
  * learning algorithm for classification.
  * It supports binary labels, as well as both continuous and categorical features.
  * Note: Multiclass labels are not currently supported.
@@ -56,6 +57,7 @@ import org.apache.spark.sql.types.DoubleType
  *    [https://issues.apache.org/jira/browse/SPARK-4240]
  */
 @Since("1.4.0")
+@Experimental
 class GBTClassifier @Since("1.4.0") (
     @Since("1.4.0") override val uid: String)
   extends Predictor[Vector, GBTClassifier, GBTClassificationModel]
@@ -147,6 +149,7 @@ class GBTClassifier @Since("1.4.0") (
 }
 
 @Since("1.4.0")
+@Experimental
 object GBTClassifier extends DefaultParamsReadable[GBTClassifier] {
 
   /** Accessor for supported loss settings: logistic */
@@ -158,7 +161,8 @@ object GBTClassifier extends DefaultParamsReadable[GBTClassifier] {
 }
 
 /**
- * Gradient-Boosted Trees (GBTs) (http://en.wikipedia.org/wiki/Gradient_boosting)
+ * :: Experimental ::
+ * [[http://en.wikipedia.org/wiki/Gradient_boosting Gradient-Boosted Trees (GBTs)]]
  * model for classification.
  * It supports binary labels, as well as both continuous and categorical features.
  * Note: Multiclass labels are not currently supported.
@@ -167,6 +171,7 @@ object GBTClassifier extends DefaultParamsReadable[GBTClassifier] {
  * @param _treeWeights  Weights for the decision trees in the ensemble.
  */
 @Since("1.6.0")
+@Experimental
 class GBTClassificationModel private[ml](
     @Since("1.6.0") override val uid: String,
     private val _trees: Array[DecisionTreeRegressionModel],
@@ -233,8 +238,8 @@ class GBTClassificationModel private[ml](
    * The importance vector is normalized to sum to 1. This method is suggested by Hastie et al.
    * (Hastie, Tibshirani, Friedman. "The Elements of Statistical Learning, 2nd Edition." 2001.)
    * and follows the implementation from scikit-learn.
-
-   * See `DecisionTreeClassificationModel.featureImportances`
+   *
+   * @see [[DecisionTreeClassificationModel.featureImportances]]
    */
   @Since("2.0.0")
   lazy val featureImportances: Vector = TreeEnsembleModel.featureImportances(trees, numFeatures)
@@ -265,7 +270,7 @@ object GBTClassificationModel extends MLReadable[GBTClassificationModel] {
       val extraMetadata: JObject = Map(
         "numFeatures" -> instance.numFeatures,
         "numTrees" -> instance.getNumTrees)
-      EnsembleModelReadWrite.saveImpl(instance, path, sparkSession, extraMetadata)
+      EnsembleModelReadWrite.saveImpl(instance, path, sqlContext, extraMetadata)
     }
   }
 
@@ -278,7 +283,7 @@ object GBTClassificationModel extends MLReadable[GBTClassificationModel] {
     override def load(path: String): GBTClassificationModel = {
       implicit val format = DefaultFormats
       val (metadata: Metadata, treesData: Array[(Metadata, Node)], treeWeights: Array[Double]) =
-        EnsembleModelReadWrite.loadImpl(path, sparkSession, className, treeClassName)
+        EnsembleModelReadWrite.loadImpl(path, sqlContext, className, treeClassName)
       val numFeatures = (metadata.metadata \ "numFeatures").extract[Int]
       val numTrees = (metadata.metadata \ "numTrees").extract[Int]
 

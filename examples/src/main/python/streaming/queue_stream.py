@@ -22,6 +22,7 @@
  To run this example use
     `$ bin/spark-submit examples/src/main/python/streaming/queue_stream.py
 """
+import sys
 import time
 
 from pyspark import SparkContext

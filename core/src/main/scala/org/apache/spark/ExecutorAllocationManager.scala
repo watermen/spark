@@ -25,10 +25,9 @@ import scala.util.control.ControlThrowable
 import com.codahale.metrics.{Gauge, MetricRegistry}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.internal.config.{DYN_ALLOCATION_MAX_EXECUTORS, DYN_ALLOCATION_MIN_EXECUTORS}
 import org.apache.spark.metrics.source.Source
 import org.apache.spark.scheduler._
-import org.apache.spark.util.{Clock, SystemClock, ThreadUtils, Utils}
+import org.apache.spark.util.{Clock, SystemClock, ThreadUtils}
 
 /**
  * An agent that dynamically allocates and removes executors based on the workload.
@@ -88,9 +87,11 @@ private[spark] class ExecutorAllocationManager(
   import ExecutorAllocationManager._
 
   // Lower and upper bounds on the number of executors.
-  private val minNumExecutors = conf.get(DYN_ALLOCATION_MIN_EXECUTORS)
-  private val maxNumExecutors = conf.get(DYN_ALLOCATION_MAX_EXECUTORS)
-  private val initialNumExecutors = Utils.getDynamicAllocationInitialExecutors(conf)
+  private val minNumExecutors = conf.getInt("spark.dynamicAllocation.minExecutors", 0)
+  private val maxNumExecutors = conf.getInt("spark.dynamicAllocation.maxExecutors",
+    Integer.MAX_VALUE)
+  private val initialNumExecutors = conf.getInt("spark.dynamicAllocation.initialExecutors",
+    minNumExecutors)
 
   // How long there must be backlogged tasks for before an addition is triggered (seconds)
   private val schedulerBacklogTimeoutS = conf.getTimeAsSeconds(

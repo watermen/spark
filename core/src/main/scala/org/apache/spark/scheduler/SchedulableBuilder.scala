@@ -112,8 +112,7 @@ private[spark] class FairSchedulableBuilder(val rootPool: Pool, conf: SparkConf)
           schedulingMode = SchedulingMode.withName(xmlSchedulingMode)
         } catch {
           case e: NoSuchElementException =>
-            logWarning(s"Unsupported schedulingMode: $xmlSchedulingMode, " +
-              s"using the default schedulingMode: $schedulingMode")
+            logWarning("Error xml schedulingMode, using default schedulingMode")
         }
       }
 

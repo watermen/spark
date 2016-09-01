@@ -45,13 +45,7 @@ public class BufferHolder {
   }
 
   public BufferHolder(UnsafeRow row, int initialSize) {
-    int bitsetWidthInBytes = UnsafeRow.calculateBitSetWidthInBytes(row.numFields());
-    if (row.numFields() > (Integer.MAX_VALUE - initialSize - bitsetWidthInBytes) / 8) {
-      throw new UnsupportedOperationException(
-        "Cannot create BufferHolder for input UnsafeRow because there are " +
-          "too many fields (number of fields: " + row.numFields() + ")");
-    }
-    this.fixedSize = bitsetWidthInBytes + 8 * row.numFields();
+    this.fixedSize = UnsafeRow.calculateBitSetWidthInBytes(row.numFields()) + 8 * row.numFields();
     this.buffer = new byte[fixedSize + initialSize];
     this.row = row;
     this.row.pointTo(buffer, buffer.length);
@@ -61,16 +55,10 @@ public class BufferHolder {
    * Grows the buffer by at least neededSize and points the row to the buffer.
    */
   public void grow(int neededSize) {
-    if (neededSize > Integer.MAX_VALUE - totalSize()) {
-      throw new UnsupportedOperationException(
-        "Cannot grow BufferHolder by size " + neededSize + " because the size after growing " +
-          "exceeds size limitation " + Integer.MAX_VALUE);
-    }
     final int length = totalSize() + neededSize;
     if (buffer.length < length) {
       // This will not happen frequently, because the buffer is re-used.
-      int newLength = length < Integer.MAX_VALUE / 2 ? length * 2 : Integer.MAX_VALUE;
-      final byte[] tmp = new byte[newLength];
+      final byte[] tmp = new byte[length * 2];
       Platform.copyMemory(
         buffer,
         Platform.BYTE_ARRAY_OFFSET,

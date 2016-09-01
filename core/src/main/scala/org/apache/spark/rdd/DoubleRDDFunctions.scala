@@ -17,7 +17,6 @@
 
 package org.apache.spark.rdd
 
-import org.apache.spark.annotation.Since
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.partial.BoundedDouble
@@ -48,12 +47,12 @@ class DoubleRDDFunctions(self: RDD[Double]) extends Logging with Serializable {
     stats().mean
   }
 
-  /** Compute the population variance of this RDD's elements. */
+  /** Compute the variance of this RDD's elements. */
   def variance(): Double = self.withScope {
     stats().variance
   }
 
-  /** Compute the population standard deviation of this RDD's elements. */
+  /** Compute the standard deviation of this RDD's elements. */
   def stdev(): Double = self.withScope {
     stats().stdev
   }
@@ -72,22 +71,6 @@ class DoubleRDDFunctions(self: RDD[Double]) extends Logging with Serializable {
    */
   def sampleVariance(): Double = self.withScope {
     stats().sampleVariance
-  }
-
-  /**
-   * Compute the population standard deviation of this RDD's elements.
-   */
-  @Since("2.1.0")
-  def popStdev(): Double = self.withScope {
-    stats().popStdev
-  }
-
-  /**
-   * Compute the population variance of this RDD's elements.
-   */
-  @Since("2.1.0")
-  def popVariance(): Double = self.withScope {
-    stats().popVariance
   }
 
   /**

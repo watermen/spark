@@ -59,9 +59,13 @@ object MulticlassMetricsExample {
     println(metrics.confusionMatrix)
 
     // Overall Statistics
-    val accuracy = metrics.accuracy
+    val precision = metrics.precision
+    val recall = metrics.recall // same as true positive rate
+    val f1Score = metrics.fMeasure
     println("Summary Statistics")
-    println(s"Accuracy = $accuracy")
+    println(s"Precision = $precision")
+    println(s"Recall = $recall")
+    println(s"F1 Score = $f1Score")
 
     // Precision by label
     val labels = metrics.labels

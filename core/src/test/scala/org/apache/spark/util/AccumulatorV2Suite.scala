@@ -88,7 +88,7 @@ class AccumulatorV2Suite extends SparkFunSuite {
   }
 
   test("ListAccumulator") {
-    val acc = new CollectionAccumulator[Double]
+    val acc = new ListAccumulator[Double]
     assert(acc.value.isEmpty)
     assert(acc.isZero)
 

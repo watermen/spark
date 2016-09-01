@@ -19,7 +19,7 @@ from __future__ import print_function
 
 # $example on$
 from pyspark.ml.feature import PolynomialExpansion
-from pyspark.ml.linalg import Vectors
+from pyspark.mllib.linalg import Vectors
 # $example off$
 from pyspark.sql import SparkSession
 
@@ -30,16 +30,15 @@ if __name__ == "__main__":
         .getOrCreate()
 
     # $example on$
-    df = spark.createDataFrame([
-        (Vectors.dense([2.0, 1.0]),),
-        (Vectors.dense([0.0, 0.0]),),
-        (Vectors.dense([3.0, -1.0]),)
-    ], ["features"])
-
-    polyExpansion = PolynomialExpansion(degree=3, inputCol="features", outputCol="polyFeatures")
-    polyDF = polyExpansion.transform(df)
-
-    polyDF.show(truncate=False)
+    df = spark\
+        .createDataFrame([(Vectors.dense([-2.0, 2.3]),),
+                          (Vectors.dense([0.0, 0.0]),),
+                          (Vectors.dense([0.6, -1.1]),)],
+                         ["features"])
+    px = PolynomialExpansion(degree=2, inputCol="features", outputCol="polyFeatures")
+    polyDF = px.transform(df)
+    for expanded in polyDF.select("polyFeatures").take(3):
+        print(expanded)
     # $example off$
 
     spark.stop()

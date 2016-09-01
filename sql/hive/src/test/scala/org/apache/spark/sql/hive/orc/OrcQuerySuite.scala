@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.hive.orc
 
+import java.io.File
 import java.nio.charset.StandardCharsets
 
 import org.scalatest.BeforeAndAfterAll
@@ -24,11 +25,10 @@ import org.scalatest.BeforeAndAfterAll
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.execution.datasources.LogicalRelation
-import org.apache.spark.sql.hive.{HiveUtils, MetastoreRelation}
+import org.apache.spark.sql.hive.HiveUtils
 import org.apache.spark.sql.hive.test.TestHive._
 import org.apache.spark.sql.hive.test.TestHive.implicits._
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{IntegerType, StructType}
 
 case class AllDataTypesWithNonPrimitiveType(
     stringField: String,
@@ -52,6 +52,12 @@ case class Contact(name: String, phone: String)
 case class Person(name: String, age: Int, contacts: Seq[Contact])
 
 class OrcQuerySuite extends QueryTest with BeforeAndAfterAll with OrcTest {
+
+  def getTempFilePath(prefix: String, suffix: String = ""): File = {
+    val tempFile = File.createTempFile(prefix, suffix)
+    tempFile.delete()
+    tempFile
+  }
 
   test("Read/write All Types") {
     val data = (0 to 255).map { i =>
@@ -93,7 +99,7 @@ class OrcQuerySuite extends QueryTest with BeforeAndAfterAll with OrcTest {
   test("Creating case class RDD table") {
     val data = (1 to 100).map(i => (i, s"val_$i"))
     sparkContext.parallelize(data).toDF().createOrReplaceTempView("t")
-    withTempView("t") {
+    withTempTable("t") {
       checkAnswer(sql("SELECT * FROM t"), data.toDF().collect())
     }
   }
@@ -147,40 +153,17 @@ class OrcQuerySuite extends QueryTest with BeforeAndAfterAll with OrcTest {
 
   test("save and load case class RDD with `None`s as orc") {
     val data = (
-      Option.empty[Int],
-      Option.empty[Long],
-      Option.empty[Float],
-      Option.empty[Double],
-      Option.empty[Boolean]
+      None: Option[Int],
+      None: Option[Long],
+      None: Option[Float],
+      None: Option[Double],
+      None: Option[Boolean]
     ) :: Nil
 
     withOrcFile(data) { file =>
       checkAnswer(
         read.orc(file),
         Row(Seq.fill(5)(null): _*))
-    }
-  }
-
-  test("SPARK-16610: Respect orc.compress option when compression is unset") {
-    // Respect `orc.compress`.
-    withTempPath { file =>
-      spark.range(0, 10).write
-        .option("orc.compress", "ZLIB")
-        .orc(file.getCanonicalPath)
-      val expectedCompressionKind =
-        OrcFileOperator.getFileReader(file.getCanonicalPath).get.getCompression
-      assert("ZLIB" === expectedCompressionKind.name())
-    }
-
-    // `compression` overrides `orc.compress`.
-    withTempPath { file =>
-      spark.range(0, 10).write
-        .option("compression", "ZLIB")
-        .option("orc.compress", "SNAPPY")
-        .orc(file.getCanonicalPath)
-      val expectedCompressionKind =
-        OrcFileOperator.getFileReader(file.getCanonicalPath).get.getCompression
-      assert("ZLIB" === expectedCompressionKind.name())
     }
   }
 
@@ -245,7 +228,7 @@ class OrcQuerySuite extends QueryTest with BeforeAndAfterAll with OrcTest {
       sql("INSERT INTO TABLE t SELECT * FROM tmp")
       checkAnswer(table("t"), (data ++ data).map(Row.fromTuple))
     }
-    sessionState.catalog.dropTable(TableIdentifier("tmp"), ignoreIfNotExists = true, purge = false)
+    sessionState.catalog.dropTable(TableIdentifier("tmp"), ignoreIfNotExists = true)
   }
 
   test("overwriting") {
@@ -255,7 +238,7 @@ class OrcQuerySuite extends QueryTest with BeforeAndAfterAll with OrcTest {
       sql("INSERT OVERWRITE TABLE t SELECT * FROM tmp")
       checkAnswer(table("t"), data.map(Row.fromTuple))
     }
-    sessionState.catalog.dropTable(TableIdentifier("tmp"), ignoreIfNotExists = true, purge = false)
+    sessionState.catalog.dropTable(TableIdentifier("tmp"), ignoreIfNotExists = true)
   }
 
   test("self-join") {
@@ -333,7 +316,7 @@ class OrcQuerySuite extends QueryTest with BeforeAndAfterAll with OrcTest {
       val path = dir.getCanonicalPath
 
       withTable("empty_orc") {
-        withTempView("empty", "single") {
+        withTempTable("empty", "single") {
           spark.sql(
             s"""CREATE TABLE empty_orc(key INT, value STRING)
                |STORED AS ORC
@@ -424,48 +407,36 @@ class OrcQuerySuite extends QueryTest with BeforeAndAfterAll with OrcTest {
     }
   }
 
-  test("Verify the ORC conversion parameter: CONVERT_METASTORE_ORC") {
-    withTempView("single") {
-      val singleRowDF = Seq((0, "foo")).toDF("key", "value")
-      singleRowDF.createOrReplaceTempView("single")
+  test("SPARK-14070 Use ORC data source for SQL queries on ORC tables") {
+    withTempPath { dir =>
+      withSQLConf(SQLConf.ORC_FILTER_PUSHDOWN_ENABLED.key -> "true",
+        HiveUtils.CONVERT_METASTORE_ORC.key -> "true") {
+        val path = dir.getCanonicalPath
 
-      Seq("true", "false").foreach { orcConversion =>
-        withSQLConf(HiveUtils.CONVERT_METASTORE_ORC.key -> orcConversion) {
-          withTable("dummy_orc") {
-            withTempPath { dir =>
-              val path = dir.getCanonicalPath
-              spark.sql(
-                s"""
-                   |CREATE TABLE dummy_orc(key INT, value STRING)
-                   |STORED AS ORC
-                   |LOCATION '$path'
-                 """.stripMargin)
+        withTable("dummy_orc") {
+          withTempTable("single") {
+            spark.sql(
+              s"""CREATE TABLE dummy_orc(key INT, value STRING)
+                  |STORED AS ORC
+                  |LOCATION '$path'
+               """.stripMargin)
 
-              spark.sql(
-                s"""
-                   |INSERT INTO TABLE dummy_orc
-                   |SELECT key, value FROM single
-                 """.stripMargin)
+            val singleRowDF = Seq((0, "foo")).toDF("key", "value").coalesce(1)
+            singleRowDF.createOrReplaceTempView("single")
 
-              val df = spark.sql("SELECT * FROM dummy_orc WHERE key=0")
-              checkAnswer(df, singleRowDF)
+            spark.sql(
+              s"""INSERT INTO TABLE dummy_orc
+                  |SELECT key, value FROM single
+               """.stripMargin)
 
-              val queryExecution = df.queryExecution
-              if (orcConversion == "true") {
-                queryExecution.analyzed.collectFirst {
-                  case _: LogicalRelation => ()
-                }.getOrElse {
-                  fail(s"Expecting the query plan to convert orc to data sources, " +
-                    s"but got:\n$queryExecution")
-                }
-              } else {
-                queryExecution.analyzed.collectFirst {
-                  case _: MetastoreRelation => ()
-                }.getOrElse {
-                  fail(s"Expecting no conversion from orc to data sources, " +
-                    s"but got:\n$queryExecution")
-                }
-              }
+            val df = spark.sql("SELECT * FROM dummy_orc WHERE key=0")
+            checkAnswer(df, singleRowDF)
+
+            val queryExecution = df.queryExecution
+            queryExecution.analyzed.collectFirst {
+              case _: LogicalRelation => ()
+            }.getOrElse {
+              fail(s"Expecting the query plan to have LogicalRelation, but got:\n$queryExecution")
             }
           }
         }
@@ -484,40 +455,6 @@ class OrcQuerySuite extends QueryTest with BeforeAndAfterAll with OrcTest {
         val expected = data.toDF()
         checkAnswer(actual, expected)
       }
-    }
-  }
-
-  test("SPARK-15198 Support for pushing down filters for boolean types") {
-    withSQLConf(SQLConf.ORC_FILTER_PUSHDOWN_ENABLED.key -> "true") {
-      val data = (0 until 10).map(_ => (true, false))
-      withOrcFile(data) { file =>
-        val df = spark.read.orc(file).where("_2 == true")
-        val actual = stripSparkFilter(df).count()
-
-        // ORC filter should be applied and the total count should be 0.
-        assert(actual === 0)
-      }
-    }
-  }
-
-  test("column nullability and comment - write and then read") {
-    val schema = (new StructType)
-      .add("cl1", IntegerType, nullable = false, comment = "test")
-      .add("cl2", IntegerType, nullable = true)
-      .add("cl3", IntegerType, nullable = true)
-    val row = Row(3, null, 4)
-    val df = spark.createDataFrame(sparkContext.parallelize(row :: Nil), schema)
-
-    val tableName = "tab"
-    withTable(tableName) {
-      df.write.format("orc").mode("overwrite").saveAsTable(tableName)
-      // Verify the DDL command result: DESCRIBE TABLE
-      checkAnswer(
-        sql(s"desc $tableName").select("col_name", "comment").where($"comment" === "test"),
-        Row("cl1", "test") :: Nil)
-      // Verify the schema
-      val expectedFields = schema.fields.map(f => f.copy(nullable = true))
-      assert(spark.table(tableName).schema == schema.copy(fields = expectedFields))
     }
   }
 }

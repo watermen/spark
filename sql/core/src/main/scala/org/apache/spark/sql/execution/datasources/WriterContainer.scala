@@ -28,7 +28,6 @@ import org.apache.spark._
 import org.apache.spark.internal.Logging
 import org.apache.spark.mapred.SparkHadoopMapRedUtil
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
 import org.apache.spark.sql.catalyst.InternalRow
@@ -36,23 +35,17 @@ import org.apache.spark.sql.execution.UnsafeKVExternalSorter
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{IntegerType, StringType, StructField, StructType}
 import org.apache.spark.util.{SerializableConfiguration, Utils}
-import org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter
 
 
 /** A container for all the details required when writing to a table. */
-private[datasources] case class WriteRelation(
+case class WriteRelation(
     sparkSession: SparkSession,
     dataSchema: StructType,
     path: String,
     prepareJobForWrite: Job => OutputWriterFactory,
     bucketSpec: Option[BucketSpec])
 
-object WriterContainer {
-  val DATASOURCE_WRITEJOBUUID = "spark.sql.sources.writeJobUUID"
-  val DATASOURCE_OUTPUTPATH = "spark.sql.sources.output.path"
-}
-
-private[datasources] abstract class BaseWriterContainer(
+private[sql] abstract class BaseWriterContainer(
     @transient val relation: WriteRelation,
     @transient private val job: Job,
     isAppend: Boolean)
@@ -98,7 +91,7 @@ private[datasources] abstract class BaseWriterContainer(
     // This UUID is sent to executor side together with the serialized `Configuration` object within
     // the `Job` instance.  `OutputWriters` on the executor side should use this UUID to generate
     // unique task output files.
-    job.getConfiguration.set(WriterContainer.DATASOURCE_WRITEJOBUUID, uniqueWriteJobId.toString)
+    job.getConfiguration.set("spark.sql.sources.writeJobUUID", uniqueWriteJobId.toString)
 
     // Order of the following two lines is important.  For Hadoop 1, TaskAttemptContext constructor
     // clones the Configuration object passed in.  If we initialize the TaskAttemptContext first,
@@ -183,7 +176,7 @@ private[datasources] abstract class BaseWriterContainer(
           val ctor = clazz.getDeclaredConstructor(classOf[Path], classOf[TaskAttemptContext])
           ctor.newInstance(new Path(outputPath), context)
         } else {
-          // The specified output committer is just an OutputCommitter.
+          // The specified output committer is just a OutputCommitter.
           // So, we will use the no-argument constructor.
           val ctor = clazz.getDeclaredConstructor()
           ctor.newInstance()
@@ -239,7 +232,7 @@ private[datasources] abstract class BaseWriterContainer(
 /**
  * A writer that writes all of the rows in a partition to a single file.
  */
-private[datasources] class DefaultWriterContainer(
+private[sql] class DefaultWriterContainer(
     relation: WriteRelation,
     job: Job,
     isAppend: Boolean)
@@ -248,7 +241,7 @@ private[datasources] class DefaultWriterContainer(
   def writeRows(taskContext: TaskContext, iterator: Iterator[InternalRow]): Unit = {
     executorSideSetup(taskContext)
     val configuration = taskAttemptContext.getConfiguration
-    configuration.set(WriterContainer.DATASOURCE_OUTPUTPATH, outputPath)
+    configuration.set("spark.sql.sources.output.path", outputPath)
     var writer = newOutputWriter(getWorkPath)
     writer.initConverter(dataSchema)
 
@@ -298,7 +291,7 @@ private[datasources] class DefaultWriterContainer(
  * done by maintaining a HashMap of open files until `maxFiles` is reached.  If this occurs, the
  * writer externally sorts the remaining rows and then writes out them out one file at a time.
  */
-private[datasources] class DynamicPartitionWriterContainer(
+private[sql] class DynamicPartitionWriterContainer(
     relation: WriteRelation,
     job: Job,
     partitionColumns: Seq[Attribute],
@@ -357,11 +350,10 @@ private[datasources] class DynamicPartitionWriterContainer(
     val path = if (partitionColumns.nonEmpty) {
       val partitionPath = getPartitionString(key).getString(0)
       configuration.set(
-        WriterContainer.DATASOURCE_OUTPUTPATH,
-        new Path(outputPath, partitionPath).toString)
+        "spark.sql.sources.output.path", new Path(outputPath, partitionPath).toString)
       new Path(getWorkPath, partitionPath).toString
     } else {
-      configuration.set(WriterContainer.DATASOURCE_OUTPUTPATH, outputPath)
+      configuration.set("spark.sql.sources.output.path", outputPath)
       getWorkPath
     }
     val bucketId = getBucketIdFromKey(key)
@@ -397,9 +389,7 @@ private[datasources] class DynamicPartitionWriterContainer(
       StructType.fromAttributes(dataColumns),
       SparkEnv.get.blockManager,
       SparkEnv.get.serializerManager,
-      TaskContext.get().taskMemoryManager().pageSizeBytes,
-      SparkEnv.get.conf.getLong("spark.shuffle.spill.numElementsForceSpillThreshold",
-        UnsafeExternalSorter.DEFAULT_NUM_ELEMENTS_FOR_SPILL_THRESHOLD))
+      TaskContext.get().taskMemoryManager().pageSizeBytes)
 
     while (iterator.hasNext) {
       val currentRow = iterator.next()

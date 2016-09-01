@@ -26,18 +26,7 @@ package org.apache.spark.sql.sources
  *
  * @since 1.3.0
  */
-abstract class Filter {
-  /**
-   * List of columns that are referenced by this filter.
-   * @since 2.1.0
-   */
-  def references: Array[String]
-
-  protected def findReferences(value: Any): Array[String] = value match {
-    case f: Filter => f.references
-    case _ => Array.empty
-  }
-}
+abstract class Filter
 
 /**
  * A filter that evaluates to `true` iff the attribute evaluates to a value
@@ -45,9 +34,7 @@ abstract class Filter {
  *
  * @since 1.3.0
  */
-case class EqualTo(attribute: String, value: Any) extends Filter {
-  override def references: Array[String] = Array(attribute) ++ findReferences(value)
-}
+case class EqualTo(attribute: String, value: Any) extends Filter
 
 /**
  * Performs equality comparison, similar to [[EqualTo]]. However, this differs from [[EqualTo]]
@@ -56,9 +43,7 @@ case class EqualTo(attribute: String, value: Any) extends Filter {
  *
  * @since 1.5.0
  */
-case class EqualNullSafe(attribute: String, value: Any) extends Filter {
-  override def references: Array[String] = Array(attribute) ++ findReferences(value)
-}
+case class EqualNullSafe(attribute: String, value: Any) extends Filter
 
 /**
  * A filter that evaluates to `true` iff the attribute evaluates to a value
@@ -66,9 +51,7 @@ case class EqualNullSafe(attribute: String, value: Any) extends Filter {
  *
  * @since 1.3.0
  */
-case class GreaterThan(attribute: String, value: Any) extends Filter {
-  override def references: Array[String] = Array(attribute) ++ findReferences(value)
-}
+case class GreaterThan(attribute: String, value: Any) extends Filter
 
 /**
  * A filter that evaluates to `true` iff the attribute evaluates to a value
@@ -76,9 +59,7 @@ case class GreaterThan(attribute: String, value: Any) extends Filter {
  *
  * @since 1.3.0
  */
-case class GreaterThanOrEqual(attribute: String, value: Any) extends Filter {
-  override def references: Array[String] = Array(attribute) ++ findReferences(value)
-}
+case class GreaterThanOrEqual(attribute: String, value: Any) extends Filter
 
 /**
  * A filter that evaluates to `true` iff the attribute evaluates to a value
@@ -86,9 +67,7 @@ case class GreaterThanOrEqual(attribute: String, value: Any) extends Filter {
  *
  * @since 1.3.0
  */
-case class LessThan(attribute: String, value: Any) extends Filter {
-  override def references: Array[String] = Array(attribute) ++ findReferences(value)
-}
+case class LessThan(attribute: String, value: Any) extends Filter
 
 /**
  * A filter that evaluates to `true` iff the attribute evaluates to a value
@@ -96,9 +75,7 @@ case class LessThan(attribute: String, value: Any) extends Filter {
  *
  * @since 1.3.0
  */
-case class LessThanOrEqual(attribute: String, value: Any) extends Filter {
-  override def references: Array[String] = Array(attribute) ++ findReferences(value)
-}
+case class LessThanOrEqual(attribute: String, value: Any) extends Filter
 
 /**
  * A filter that evaluates to `true` iff the attribute evaluates to one of the values in the array.
@@ -122,8 +99,6 @@ case class In(attribute: String, values: Array[Any]) extends Filter {
   override def toString: String = {
     s"In($attribute, [${values.mkString(",")}]"
   }
-
-  override def references: Array[String] = Array(attribute) ++ values.flatMap(findReferences)
 }
 
 /**
@@ -131,45 +106,35 @@ case class In(attribute: String, values: Array[Any]) extends Filter {
  *
  * @since 1.3.0
  */
-case class IsNull(attribute: String) extends Filter {
-  override def references: Array[String] = Array(attribute)
-}
+case class IsNull(attribute: String) extends Filter
 
 /**
  * A filter that evaluates to `true` iff the attribute evaluates to a non-null value.
  *
  * @since 1.3.0
  */
-case class IsNotNull(attribute: String) extends Filter {
-  override def references: Array[String] = Array(attribute)
-}
+case class IsNotNull(attribute: String) extends Filter
 
 /**
  * A filter that evaluates to `true` iff both `left` or `right` evaluate to `true`.
  *
  * @since 1.3.0
  */
-case class And(left: Filter, right: Filter) extends Filter {
-  override def references: Array[String] = left.references ++ right.references
-}
+case class And(left: Filter, right: Filter) extends Filter
 
 /**
  * A filter that evaluates to `true` iff at least one of `left` or `right` evaluates to `true`.
  *
  * @since 1.3.0
  */
-case class Or(left: Filter, right: Filter) extends Filter {
-  override def references: Array[String] = left.references ++ right.references
-}
+case class Or(left: Filter, right: Filter) extends Filter
 
 /**
  * A filter that evaluates to `true` iff `child` is evaluated to `false`.
  *
  * @since 1.3.0
  */
-case class Not(child: Filter) extends Filter {
-  override def references: Array[String] = child.references
-}
+case class Not(child: Filter) extends Filter
 
 /**
  * A filter that evaluates to `true` iff the attribute evaluates to
@@ -177,9 +142,7 @@ case class Not(child: Filter) extends Filter {
  *
  * @since 1.3.1
  */
-case class StringStartsWith(attribute: String, value: String) extends Filter {
-  override def references: Array[String] = Array(attribute)
-}
+case class StringStartsWith(attribute: String, value: String) extends Filter
 
 /**
  * A filter that evaluates to `true` iff the attribute evaluates to
@@ -187,9 +150,7 @@ case class StringStartsWith(attribute: String, value: String) extends Filter {
  *
  * @since 1.3.1
  */
-case class StringEndsWith(attribute: String, value: String) extends Filter {
-  override def references: Array[String] = Array(attribute)
-}
+case class StringEndsWith(attribute: String, value: String) extends Filter
 
 /**
  * A filter that evaluates to `true` iff the attribute evaluates to
@@ -197,6 +158,4 @@ case class StringEndsWith(attribute: String, value: String) extends Filter {
  *
  * @since 1.3.1
  */
-case class StringContains(attribute: String, value: String) extends Filter {
-  override def references: Array[String] = Array(attribute)
-}
+case class StringContains(attribute: String, value: String) extends Filter

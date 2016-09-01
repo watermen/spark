@@ -147,9 +147,7 @@ if __name__ == "__main__":
         ("solver", "the solver algorithm for optimization. If this is not set or empty, " +
          "default value is 'auto'.", "'auto'", "TypeConverters.toString"),
         ("varianceCol", "column name for the biased sample variance of prediction.",
-         None, "TypeConverters.toString"),
-        ("aggregationDepth", "suggested depth for treeAggregate (>= 2).", "2",
-         "TypeConverters.toInt")]
+         None, "TypeConverters.toString")]
 
     code = []
     for name, doc, defaultValueStr, typeConverter in shared:

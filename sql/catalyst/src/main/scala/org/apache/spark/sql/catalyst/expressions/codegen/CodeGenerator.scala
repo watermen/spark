@@ -17,28 +17,21 @@
 
 package org.apache.spark.sql.catalyst.expressions.codegen
 
-import java.io.ByteArrayInputStream
-import java.util.{Map => JavaMap}
-
-import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-
-import com.google.common.cache.{CacheBuilder, CacheLoader}
-import org.codehaus.janino.{ByteArrayClassLoader, ClassBodyEvaluator, SimpleCompiler}
-import org.codehaus.janino.util.ClassFile
 import scala.language.existentials
 
-import org.apache.spark.SparkEnv
+import com.google.common.cache.{CacheBuilder, CacheLoader}
+import org.codehaus.janino.ClassBodyEvaluator
+
 import org.apache.spark.internal.Logging
-import org.apache.spark.metrics.source.CodegenMetrics
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.{ArrayData, MapData}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.Platform
 import org.apache.spark.unsafe.types._
-import org.apache.spark.util.{ParentClassLoader, Utils}
+import org.apache.spark.util.Utils
 
 /**
  * Java source for evaluating an [[Expression]] given a [[InternalRow]] of input.
@@ -133,22 +126,6 @@ class CodegenContext {
 
   def addMutableState(javaType: String, variableName: String, initCode: String): Unit = {
     mutableStates += ((javaType, variableName, initCode))
-  }
-
-  /**
-   * Add buffer variable which stores data coming from an [[InternalRow]]. This methods guarantees
-   * that the variable is safely stored, which is important for (potentially) byte array backed
-   * data types like: UTF8String, ArrayData, MapData & InternalRow.
-   */
-  def addBufferedState(dataType: DataType, variableName: String, initCode: String): ExprCode = {
-    val value = freshName(variableName)
-    addMutableState(javaType(dataType), value, "")
-    val code = dataType match {
-      case StringType => s"$value = $initCode.clone();"
-      case _: StructType | _: ArrayType | _: MapType => s"$value = $initCode.copy();"
-      case _ => s"$value = $initCode;"
-    }
-    ExprCode(code, "false", value)
   }
 
   def declareMutableStates(): String = {
@@ -512,7 +489,6 @@ class CodegenContext {
       addNewFunction(compareFunc, funcCode)
       s"this.$compareFunc($c1, $c2)"
     case schema: StructType =>
-      INPUT_ROW = "i"
       val comparisons = GenerateOrdering.genComparisons(this, schema)
       val compareFunc = freshName("compareStruct")
       val funcCode: String =
@@ -584,18 +560,11 @@ class CodegenContext {
    * @param expressions the codes to evaluate expressions.
    */
   def splitExpressions(row: String, expressions: Seq[String]): String = {
-    if (row == null || currentVars != null) {
-      // Cannot split these expressions because they are not created from a row object.
-      return expressions.mkString("\n")
-    }
     val blocks = new ArrayBuffer[String]()
     val blockBuilder = new StringBuilder()
     for (code <- expressions) {
-      // We can't know how many bytecode will be generated, so use the length of source code
-      // as metric. A method should not go beyond 8K, otherwise it will not be JITted, should
-      // also not be too small, or it will have many function calls (for wide table), see the
-      // results in BenchmarkWideTable.
-      if (blockBuilder.length > 1024) {
+      // We can't know how many byte code will be generated, so use the number of bytes as limit
+      if (blockBuilder.length > 64 * 1000) {
         blocks.append(blockBuilder.toString())
         blockBuilder.clear()
       }
@@ -751,23 +720,15 @@ class CodegenContext {
   /**
    * Register a comment and return the corresponding place holder
    */
-  def registerComment(text: => String): String = {
-    // By default, disable comments in generated code because computing the comments themselves can
-    // be extremely expensive in certain cases, such as deeply-nested expressions which operate over
-    // inputs with wide schemas. For more details on the performance issues that motivated this
-    // flat, see SPARK-15680.
-    if (SparkEnv.get != null && SparkEnv.get.conf.getBoolean("spark.sql.codegen.comments", false)) {
-      val name = freshName("c")
-      val comment = if (text.contains("\n") || text.contains("\r")) {
-        text.split("(\r\n)|\r|\n").mkString("/**\n * ", "\n * ", "\n */")
-      } else {
-        s"// $text"
-      }
-      placeHolderToComments += (name -> comment)
-      s"/*$name*/"
+  def registerComment(text: String): String = {
+    val name = freshName("c")
+    val comment = if (text.contains("\n") || text.contains("\r")) {
+      text.split("(\r\n)|\r|\n").mkString("/**\n * ", "\n * ", "\n */")
     } else {
-      ""
+      s"// $text"
     }
+    placeHolderToComments += (name -> comment)
+    s"/*$name*/"
   }
 }
 
@@ -845,17 +806,7 @@ object CodeGenerator extends Logging {
    */
   private[this] def doCompile(code: CodeAndComment): GeneratedClass = {
     val evaluator = new ClassBodyEvaluator()
-
-    // A special classloader used to wrap the actual parent classloader of
-    // [[org.codehaus.janino.ClassBodyEvaluator]] (see CodeGenerator.doCompile). This classloader
-    // does not throw a ClassNotFoundException with a cause set (i.e. exception.getCause returns
-    // a null). This classloader is needed because janino will throw the exception directly if
-    // the parent classloader throws a ClassNotFoundException with cause set instead of trying to
-    // find other possible classes (see org.codehaus.janinoClassLoaderIClassLoader's
-    // findIClass method). Please also see https://issues.apache.org/jira/browse/SPARK-15622 and
-    // https://issues.apache.org/jira/browse/SPARK-11636.
-    val parentClassLoader = new ParentClassLoader(Utils.getContextOrSparkClassLoader)
-    evaluator.setParentClassLoader(parentClassLoader)
+    evaluator.setParentClassLoader(Utils.getContextOrSparkClassLoader)
     // Cannot be under package codegen, or fail with java.lang.InstantiationException
     evaluator.setClassName("org.apache.spark.sql.catalyst.expressions.GeneratedClass")
     evaluator.setDefaultImports(Array(
@@ -884,7 +835,6 @@ object CodeGenerator extends Logging {
 
     try {
       evaluator.cook("generated.java", code.body)
-      recordCompilationStats(evaluator)
     } catch {
       case e: Exception =>
         val msg = s"failed to compile: $e\n$formatted"
@@ -892,38 +842,6 @@ object CodeGenerator extends Logging {
         throw new Exception(msg, e)
     }
     evaluator.getClazz().newInstance().asInstanceOf[GeneratedClass]
-  }
-
-  /**
-   * Records the generated class and method bytecode sizes by inspecting janino private fields.
-   */
-  private def recordCompilationStats(evaluator: ClassBodyEvaluator): Unit = {
-    // First retrieve the generated classes.
-    val classes = {
-      val resultField = classOf[SimpleCompiler].getDeclaredField("result")
-      resultField.setAccessible(true)
-      val loader = resultField.get(evaluator).asInstanceOf[ByteArrayClassLoader]
-      val classesField = loader.getClass.getDeclaredField("classes")
-      classesField.setAccessible(true)
-      classesField.get(loader).asInstanceOf[JavaMap[String, Array[Byte]]].asScala
-    }
-
-    // Then walk the classes to get at the method bytecode.
-    val codeAttr = Utils.classForName("org.codehaus.janino.util.ClassFile$CodeAttribute")
-    val codeAttrField = codeAttr.getDeclaredField("code")
-    codeAttrField.setAccessible(true)
-    classes.foreach { case (_, classBytes) =>
-      CodegenMetrics.METRIC_GENERATED_CLASS_BYTECODE_SIZE.update(classBytes.length)
-      val cf = new ClassFile(new ByteArrayInputStream(classBytes))
-      cf.methodInfos.asScala.foreach { method =>
-        method.getAttributes().foreach { a =>
-          if (a.getClass.getName == codeAttr.getName) {
-            CodegenMetrics.METRIC_GENERATED_METHOD_BYTECODE_SIZE.update(
-              codeAttrField.get(a).asInstanceOf[Array[Byte]].length)
-          }
-        }
-      }
-    }
   }
 
   /**
@@ -944,8 +862,6 @@ object CodeGenerator extends Logging {
           val result = doCompile(code)
           val endTime = System.nanoTime()
           def timeMs: Double = (endTime - startTime).toDouble / 1000000
-          CodegenMetrics.METRIC_SOURCE_CODE_SIZE.update(code.body.length)
-          CodegenMetrics.METRIC_COMPILATION_TIME.update(timeMs.toLong)
           logInfo(s"Code generated in $timeMs ms")
           result
         }

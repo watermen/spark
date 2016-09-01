@@ -19,7 +19,7 @@ package org.apache.spark.ml.regression
 
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.annotation.Since
+import org.apache.spark.annotation.{Experimental, Since}
 import org.apache.spark.internal.Logging
 import org.apache.spark.ml.{Estimator, Model}
 import org.apache.spark.ml.linalg.{Vector, Vectors, VectorUDT}
@@ -120,6 +120,7 @@ private[regression] trait IsotonicRegressionBase extends Params with HasFeatures
 }
 
 /**
+ * :: Experimental ::
  * Isotonic regression.
  *
  * Currently implemented using parallelized pool adjacent violators algorithm.
@@ -128,6 +129,7 @@ private[regression] trait IsotonicRegressionBase extends Params with HasFeatures
  * Uses [[org.apache.spark.mllib.regression.IsotonicRegression]].
  */
 @Since("1.5.0")
+@Experimental
 class IsotonicRegression @Since("1.5.0") (@Since("1.5.0") override val uid: String)
   extends Estimator[IsotonicRegressionModel]
   with IsotonicRegressionBase with DefaultParamsWritable {
@@ -164,7 +166,7 @@ class IsotonicRegression @Since("1.5.0") (@Since("1.5.0") override val uid: Stri
 
   @Since("2.0.0")
   override def fit(dataset: Dataset[_]): IsotonicRegressionModel = {
-    transformSchema(dataset.schema, logging = true)
+    validateAndTransformSchema(dataset.schema, fitting = true)
     // Extract columns from data.  If dataset is persisted, do not persist oldDataset.
     val instances = extractWeightedLabeledPoints(dataset)
     val handlePersistence = dataset.rdd.getStorageLevel == StorageLevel.NONE
@@ -190,6 +192,7 @@ object IsotonicRegression extends DefaultParamsReadable[IsotonicRegression] {
 }
 
 /**
+ * :: Experimental ::
  * Model fitted by IsotonicRegression.
  * Predicts using a piecewise linear function.
  *
@@ -199,6 +202,7 @@ object IsotonicRegression extends DefaultParamsReadable[IsotonicRegression] {
  *                 model trained by [[org.apache.spark.mllib.regression.IsotonicRegression]].
  */
 @Since("1.5.0")
+@Experimental
 class IsotonicRegressionModel private[ml] (
     override val uid: String,
     private val oldModel: MLlibIsotonicRegressionModel)
@@ -217,14 +221,14 @@ class IsotonicRegressionModel private[ml] (
   def setFeatureIndex(value: Int): this.type = set(featureIndex, value)
 
   /** Boundaries in increasing order for which predictions are known. */
-  @Since("2.0.0")
+  @Since("1.5.0")
   def boundaries: Vector = Vectors.dense(oldModel.boundaries)
 
   /**
    * Predictions associated with the boundaries at the same index, monotone because of isotonic
    * regression.
    */
-  @Since("2.0.0")
+  @Since("1.5.0")
   def predictions: Vector = Vectors.dense(oldModel.predictions)
 
   @Since("1.5.0")
@@ -234,7 +238,6 @@ class IsotonicRegressionModel private[ml] (
 
   @Since("2.0.0")
   override def transform(dataset: Dataset[_]): DataFrame = {
-    transformSchema(dataset.schema, logging = true)
     val predict = dataset.schema($(featuresCol)).dataType match {
       case DoubleType =>
         udf { feature: Double => oldModel.predict(feature) }
@@ -281,7 +284,7 @@ object IsotonicRegressionModel extends MLReadable[IsotonicRegressionModel] {
       val data = Data(
         instance.oldModel.boundaries, instance.oldModel.predictions, instance.oldModel.isotonic)
       val dataPath = new Path(path, "data").toString
-      sparkSession.createDataFrame(Seq(data)).repartition(1).write.parquet(dataPath)
+      sqlContext.createDataFrame(Seq(data)).repartition(1).write.parquet(dataPath)
     }
   }
 
@@ -294,7 +297,7 @@ object IsotonicRegressionModel extends MLReadable[IsotonicRegressionModel] {
       val metadata = DefaultParamsReader.loadMetadata(path, sc, className)
 
       val dataPath = new Path(path, "data").toString
-      val data = sparkSession.read.parquet(dataPath)
+      val data = sqlContext.read.parquet(dataPath)
         .select("boundaries", "predictions", "isotonic").head()
       val boundaries = data.getAs[Seq[Double]](0).toArray
       val predictions = data.getAs[Seq[Double]](1).toArray

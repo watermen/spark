@@ -19,7 +19,7 @@ package org.apache.spark.sql.execution.vectorized;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 
-import com.google.common.annotations.VisibleForTesting;
+import org.apache.commons.lang.NotImplementedException;
 import org.apache.parquet.column.Dictionary;
 import org.apache.parquet.io.api.Binary;
 
@@ -27,7 +27,6 @@ import org.apache.spark.memory.MemoryMode;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.util.ArrayData;
 import org.apache.spark.sql.catalyst.util.MapData;
-import org.apache.spark.sql.internal.SQLConf;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.unsafe.types.CalendarInterval;
 import org.apache.spark.unsafe.types.UTF8String;
@@ -99,7 +98,7 @@ public abstract class ColumnVector implements AutoCloseable {
 
     @Override
     public ArrayData copy() {
-      throw new UnsupportedOperationException();
+      throw new NotImplementedException();
     }
 
     // TODO: this is extremely expensive.
@@ -170,7 +169,7 @@ public abstract class ColumnVector implements AutoCloseable {
           }
         }
       } else {
-        throw new UnsupportedOperationException("Type " + dt);
+        throw new NotImplementedException("Type " + dt);
       }
       return list;
     }
@@ -180,7 +179,7 @@ public abstract class ColumnVector implements AutoCloseable {
 
     @Override
     public boolean getBoolean(int ordinal) {
-      throw new UnsupportedOperationException();
+      throw new NotImplementedException();
     }
 
     @Override
@@ -188,7 +187,7 @@ public abstract class ColumnVector implements AutoCloseable {
 
     @Override
     public short getShort(int ordinal) {
-      throw new UnsupportedOperationException();
+      throw new NotImplementedException();
     }
 
     @Override
@@ -199,7 +198,7 @@ public abstract class ColumnVector implements AutoCloseable {
 
     @Override
     public float getFloat(int ordinal) {
-      throw new UnsupportedOperationException();
+      throw new NotImplementedException();
     }
 
     @Override
@@ -239,12 +238,12 @@ public abstract class ColumnVector implements AutoCloseable {
 
     @Override
     public MapData getMap(int ordinal) {
-      throw new UnsupportedOperationException();
+      throw new NotImplementedException();
     }
 
     @Override
     public Object get(int ordinal, DataType dataType) {
-      throw new UnsupportedOperationException();
+      throw new NotImplementedException();
     }
   }
 
@@ -278,39 +277,11 @@ public abstract class ColumnVector implements AutoCloseable {
    */
   public abstract void close();
 
-  public void reserve(int requiredCapacity) {
-    if (requiredCapacity > capacity) {
-      int newCapacity = (int) Math.min(MAX_CAPACITY, requiredCapacity * 2L);
-      if (requiredCapacity <= newCapacity) {
-        try {
-          reserveInternal(newCapacity);
-        } catch (OutOfMemoryError outOfMemoryError) {
-          throwUnsupportedException(newCapacity, requiredCapacity, outOfMemoryError);
-        }
-      } else {
-        throwUnsupportedException(newCapacity, requiredCapacity, null);
-      }
-    }
-  }
-
-  private void throwUnsupportedException(int newCapacity, int requiredCapacity, Throwable cause) {
-    String message = "Cannot reserve more than " + newCapacity +
-        " bytes in the vectorized reader (requested = " + requiredCapacity + " bytes). As a" +
-        " workaround, you can disable the vectorized reader by setting "
-        + SQLConf.PARQUET_VECTORIZED_READER_ENABLED().key() + " to false.";
-
-    if (cause != null) {
-      throw new RuntimeException(message, cause);
-    } else {
-      throw new RuntimeException(message);
-    }
-  }
-
-  /**
+  /*
    * Ensures that there is enough storage to store capcity elements. That is, the put() APIs
    * must work for all rowIds < capcity.
    */
-  protected abstract void reserveInternal(int capacity);
+  public abstract void reserve(int capacity);
 
   /**
    * Returns the number of nulls in this column.
@@ -427,13 +398,6 @@ public abstract class ColumnVector implements AutoCloseable {
    * Returns the value for rowId.
    */
   public abstract int getInt(int rowId);
-
-  /**
-   * Returns the dictionary Id for rowId.
-   * This should only be called when the ColumnVector is dictionaryIds.
-   * We have this separate method for dictionaryIds as per SPARK-16928.
-   */
-  public abstract int getDictId(int rowId);
 
   /**
    * Sets the value at rowId to `value`.
@@ -582,7 +546,7 @@ public abstract class ColumnVector implements AutoCloseable {
    * Returns the value for rowId.
    */
   public MapData getMap(int ordinal) {
-    throw new UnsupportedOperationException();
+    throw new NotImplementedException();
   }
 
   /**
@@ -622,7 +586,7 @@ public abstract class ColumnVector implements AutoCloseable {
       ColumnVector.Array a = getByteArray(rowId);
       return UTF8String.fromBytes(a.byteArray, a.byteArrayOffset, a.length);
     } else {
-      Binary v = dictionary.decodeToBinary(dictionaryIds.getDictId(rowId));
+      Binary v = dictionary.decodeToBinary(dictionaryIds.getInt(rowId));
       return UTF8String.fromBytes(v.getBytes());
     }
   }
@@ -637,7 +601,7 @@ public abstract class ColumnVector implements AutoCloseable {
       System.arraycopy(array.byteArray, array.byteArrayOffset, bytes, 0, bytes.length);
       return bytes;
     } else {
-      Binary v = dictionary.decodeToBinary(dictionaryIds.getDictId(rowId));
+      Binary v = dictionary.decodeToBinary(dictionaryIds.getInt(rowId));
       return v.getBytes();
     }
   }
@@ -881,12 +845,6 @@ public abstract class ColumnVector implements AutoCloseable {
    * Maximum number of rows that can be stored in this column.
    */
   protected int capacity;
-
-  /**
-   * Upper limit for the maximum capacity for this column.
-   */
-  @VisibleForTesting
-  protected int MAX_CAPACITY = Integer.MAX_VALUE;
 
   /**
    * Data type for this column.

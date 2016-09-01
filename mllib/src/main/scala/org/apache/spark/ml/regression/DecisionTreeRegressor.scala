@@ -21,7 +21,7 @@ import org.apache.hadoop.fs.Path
 import org.json4s.{DefaultFormats, JObject}
 import org.json4s.JsonDSL._
 
-import org.apache.spark.annotation.Since
+import org.apache.spark.annotation.{Experimental, Since}
 import org.apache.spark.ml.{PredictionModel, Predictor}
 import org.apache.spark.ml.feature.LabeledPoint
 import org.apache.spark.ml.linalg.Vector
@@ -38,11 +38,13 @@ import org.apache.spark.sql.functions._
 
 
 /**
+ * :: Experimental ::
  * [[http://en.wikipedia.org/wiki/Decision_tree_learning Decision tree]] learning algorithm
  * for regression.
  * It supports both continuous and categorical features.
  */
 @Since("1.4.0")
+@Experimental
 class DecisionTreeRegressor @Since("1.4.0") (@Since("1.4.0") override val uid: String)
   extends Predictor[Vector, DecisionTreeRegressor, DecisionTreeRegressionModel]
   with DecisionTreeRegressorParams with DefaultParamsWritable {
@@ -123,6 +125,7 @@ class DecisionTreeRegressor @Since("1.4.0") (@Since("1.4.0") override val uid: S
 }
 
 @Since("1.4.0")
+@Experimental
 object DecisionTreeRegressor extends DefaultParamsReadable[DecisionTreeRegressor] {
   /** Accessor for supported impurities: variance */
   final val supportedImpurities: Array[String] = TreeRegressorParams.supportedImpurities
@@ -132,11 +135,13 @@ object DecisionTreeRegressor extends DefaultParamsReadable[DecisionTreeRegressor
 }
 
 /**
+ * :: Experimental ::
  * [[http://en.wikipedia.org/wiki/Decision_tree_learning Decision tree]] model for regression.
  * It supports both continuous and categorical features.
  * @param rootNode  Root of the decision tree
  */
 @Since("1.4.0")
+@Experimental
 class DecisionTreeRegressionModel private[ml] (
     override val uid: String,
     override val rootNode: Node,
@@ -244,7 +249,7 @@ object DecisionTreeRegressionModel extends MLReadable[DecisionTreeRegressionMode
       DefaultParamsWriter.saveMetadata(instance, path, sc, Some(extraMetadata))
       val (nodeData, _) = NodeData.build(instance.rootNode, 0)
       val dataPath = new Path(path, "data").toString
-      sparkSession.createDataFrame(nodeData).write.parquet(dataPath)
+      sqlContext.createDataFrame(nodeData).write.parquet(dataPath)
     }
   }
 
@@ -258,7 +263,7 @@ object DecisionTreeRegressionModel extends MLReadable[DecisionTreeRegressionMode
       implicit val format = DefaultFormats
       val metadata = DefaultParamsReader.loadMetadata(path, sc, className)
       val numFeatures = (metadata.metadata \ "numFeatures").extract[Int]
-      val root = loadTreeNodes(path, metadata, sparkSession)
+      val root = loadTreeNodes(path, metadata, sqlContext)
       val model = new DecisionTreeRegressionModel(metadata.uid, root, numFeatures)
       DefaultParamsReader.getAndSetParams(model, metadata)
       model

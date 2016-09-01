@@ -71,15 +71,10 @@ jobj <- function(objId) {
 #'
 #' @param x The JVM object reference
 #' @param ... further arguments passed to or from other methods
-#' @note print.jobj since 1.4.0
 print.jobj <- function(x, ...) {
-  name <- getClassName.jobj(x)
-  cat("Java ref type", name, "id", x$id, "\n", sep = " ")
-}
-
-getClassName.jobj <- function(x) {
   cls <- callJMethod(x, "getClass")
-  callJMethod(cls, "getName")
+  name <- callJMethod(cls, "getName")
+  cat("Java ref type", name, "id", x$id, "\n", sep = " ")
 }
 
 cleanup.jobj <- function(jobj) {

@@ -25,8 +25,9 @@ object ExceptionHandlingTest {
       .builder
       .appName("ExceptionHandlingTest")
       .getOrCreate()
+    val sc = spark.sparkContext
 
-    spark.sparkContext.parallelize(0 until spark.sparkContext.defaultParallelism).foreach { i =>
+    sc.parallelize(0 until sc.defaultParallelism).foreach { i =>
       if (math.random > 0.75) {
         throw new Exception("Testing exception handling")
       }

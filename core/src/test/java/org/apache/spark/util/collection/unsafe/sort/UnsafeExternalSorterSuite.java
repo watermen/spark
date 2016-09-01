@@ -88,7 +88,7 @@ public class UnsafeExternalSorterSuite {
 
   private final long pageSizeBytes = new SparkConf().getSizeAsBytes("spark.buffer.pageSize", "4m");
 
-  private static final class WrapStream extends AbstractFunction1<OutputStream, OutputStream> {
+  private static final class CompressStream extends AbstractFunction1<OutputStream, OutputStream> {
     @Override
     public OutputStream apply(OutputStream stream) {
       return stream;
@@ -128,7 +128,7 @@ public class UnsafeExternalSorterSuite {
           (File) args[1],
           (SerializerInstance) args[2],
           (Integer) args[3],
-          new WrapStream(),
+          new CompressStream(),
           false,
           (ShuffleWriteMetrics) args[4],
           (BlockId) args[0]
@@ -156,14 +156,14 @@ public class UnsafeExternalSorterSuite {
 
   private static void insertNumber(UnsafeExternalSorter sorter, int value) throws Exception {
     final int[] arr = new int[]{ value };
-    sorter.insertRecord(arr, Platform.INT_ARRAY_OFFSET, 4, value, false);
+    sorter.insertRecord(arr, Platform.INT_ARRAY_OFFSET, 4, value);
   }
 
   private static void insertRecord(
       UnsafeExternalSorter sorter,
       int[] record,
       long prefix) throws IOException {
-    sorter.insertRecord(record, Platform.INT_ARRAY_OFFSET, record.length * 4, prefix, false);
+    sorter.insertRecord(record, Platform.INT_ARRAY_OFFSET, record.length * 4, prefix);
   }
 
   private UnsafeExternalSorter newSorter() throws IOException {
@@ -176,7 +176,6 @@ public class UnsafeExternalSorterSuite {
       prefixComparator,
       /* initialSize */ 1024,
       pageSizeBytes,
-      UnsafeExternalSorter.DEFAULT_NUM_ELEMENTS_FOR_SPILL_THRESHOLD,
       shouldUseRadixSort());
   }
 
@@ -207,13 +206,13 @@ public class UnsafeExternalSorterSuite {
   @Test
   public void testSortingEmptyArrays() throws Exception {
     final UnsafeExternalSorter sorter = newSorter();
-    sorter.insertRecord(null, 0, 0, 0, false);
-    sorter.insertRecord(null, 0, 0, 0, false);
+    sorter.insertRecord(null, 0, 0, 0);
+    sorter.insertRecord(null, 0, 0, 0);
     sorter.spill();
-    sorter.insertRecord(null, 0, 0, 0, false);
+    sorter.insertRecord(null, 0, 0, 0);
     sorter.spill();
-    sorter.insertRecord(null, 0, 0, 0, false);
-    sorter.insertRecord(null, 0, 0, 0, false);
+    sorter.insertRecord(null, 0, 0, 0);
+    sorter.insertRecord(null, 0, 0, 0);
 
     UnsafeSorterIterator iter = sorter.getSortedIterator();
 
@@ -233,7 +232,7 @@ public class UnsafeExternalSorterSuite {
     long prevSortTime = sorter.getSortTimeNanos();
     assertEquals(prevSortTime, 0);
 
-    sorter.insertRecord(null, 0, 0, 0, false);
+    sorter.insertRecord(null, 0, 0, 0);
     sorter.spill();
     assertThat(sorter.getSortTimeNanos(), greaterThan(prevSortTime));
     prevSortTime = sorter.getSortTimeNanos();
@@ -241,7 +240,7 @@ public class UnsafeExternalSorterSuite {
     sorter.spill();  // no sort needed
     assertEquals(sorter.getSortTimeNanos(), prevSortTime);
 
-    sorter.insertRecord(null, 0, 0, 0, false);
+    sorter.insertRecord(null, 0, 0, 0);
     UnsafeSorterIterator iter = sorter.getSortedIterator();
     assertThat(sorter.getSortTimeNanos(), greaterThan(prevSortTime));
   }
@@ -281,7 +280,7 @@ public class UnsafeExternalSorterSuite {
     final UnsafeExternalSorter sorter = newSorter();
     byte[] record = new byte[16];
     while (sorter.getNumberOfAllocatedPages() < 2) {
-      sorter.insertRecord(record, Platform.BYTE_ARRAY_OFFSET, record.length, 0, false);
+      sorter.insertRecord(record, Platform.BYTE_ARRAY_OFFSET, record.length, 0);
     }
     sorter.cleanupResources();
     assertSpillFilesWereCleanedUp();
@@ -341,7 +340,7 @@ public class UnsafeExternalSorterSuite {
     int n = (int) pageSizeBytes / recordSize * 3;
     for (int i = 0; i < n; i++) {
       record[0] = (long) i;
-      sorter.insertRecord(record, Platform.LONG_ARRAY_OFFSET, recordSize, 0, false);
+      sorter.insertRecord(record, Platform.LONG_ARRAY_OFFSET, recordSize, 0);
     }
     assertTrue(sorter.getNumberOfAllocatedPages() >= 2);
     UnsafeExternalSorter.SpillableIterator iter =
@@ -373,7 +372,7 @@ public class UnsafeExternalSorterSuite {
     int n = (int) pageSizeBytes / recordSize * 3;
     for (int i = 0; i < n; i++) {
       record[0] = (long) i;
-      sorter.insertRecord(record, Platform.LONG_ARRAY_OFFSET, recordSize, 0, false);
+      sorter.insertRecord(record, Platform.LONG_ARRAY_OFFSET, recordSize, 0);
     }
     assertTrue(sorter.getNumberOfAllocatedPages() >= 2);
     UnsafeExternalSorter.SpillableIterator iter =
@@ -400,7 +399,6 @@ public class UnsafeExternalSorterSuite {
       null,
       /* initialSize */ 1024,
       pageSizeBytes,
-      UnsafeExternalSorter.DEFAULT_NUM_ELEMENTS_FOR_SPILL_THRESHOLD,
       shouldUseRadixSort());
     long[] record = new long[100];
     int recordSize = record.length * 8;
@@ -408,7 +406,7 @@ public class UnsafeExternalSorterSuite {
     int batch = n / 4;
     for (int i = 0; i < n; i++) {
       record[0] = (long) i;
-      sorter.insertRecord(record, Platform.LONG_ARRAY_OFFSET, recordSize, 0, false);
+      sorter.insertRecord(record, Platform.LONG_ARRAY_OFFSET, recordSize, 0);
       if (i % batch == batch - 1) {
         sorter.spill();
       }
@@ -437,7 +435,6 @@ public class UnsafeExternalSorterSuite {
       prefixComparator,
       1024,
       pageSizeBytes,
-      UnsafeExternalSorter.DEFAULT_NUM_ELEMENTS_FOR_SPILL_THRESHOLD,
       shouldUseRadixSort());
 
     // Peak memory should be monotonically increasing. More specifically, every time

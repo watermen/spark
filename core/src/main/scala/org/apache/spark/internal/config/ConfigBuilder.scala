@@ -116,17 +116,11 @@ private[spark] class TypedConfigBuilder[T](
 
   /** Creates a [[ConfigEntry]] that has a default value. */
   def createWithDefault(default: T): ConfigEntry[T] = {
-    // Treat "String" as a special case, so that both createWithDefault and createWithDefaultString
-    // behave the same w.r.t. variable expansion of default values.
-    if (default.isInstanceOf[String]) {
-      createWithDefaultString(default.asInstanceOf[String])
-    } else {
-      val transformedDefault = converter(stringConverter(default))
-      val entry = new ConfigEntryWithDefault[T](parent.key, transformedDefault, converter,
-        stringConverter, parent._doc, parent._public)
-      parent._onCreate.foreach(_(entry))
-      entry
-    }
+    val transformedDefault = converter(stringConverter(default))
+    val entry = new ConfigEntryWithDefault[T](parent.key, transformedDefault, converter,
+      stringConverter, parent._doc, parent._public)
+    parent._onCreate.foreach(_(entry))
+    entry
   }
 
   /**
@@ -134,7 +128,8 @@ private[spark] class TypedConfigBuilder[T](
    * [[String]] and must be a valid value for the entry.
    */
   def createWithDefaultString(default: String): ConfigEntry[T] = {
-    val entry = new ConfigEntryWithDefaultString[T](parent.key, default, converter, stringConverter,
+    val typedDefault = converter(default)
+    val entry = new ConfigEntryWithDefault[T](parent.key, typedDefault, converter, stringConverter,
       parent._doc, parent._public)
     parent._onCreate.foreach(_(entry))
     entry

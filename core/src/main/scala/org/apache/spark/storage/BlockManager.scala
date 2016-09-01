@@ -92,12 +92,11 @@ private[spark] class BlockManager(
   private[spark] val diskStore = new DiskStore(conf, diskBlockManager)
   memoryManager.setMemoryStore(memoryStore)
 
-  // Note: depending on the memory manager, `maxMemory` may actually vary over time.
+  // Note: depending on the memory manager, `maxStorageMemory` may actually vary over time.
   // However, since we use this only for reporting and logging, what we actually want here is
-  // the absolute maximum value that `maxMemory` can ever possibly reach. We may need
+  // the absolute maximum value that `maxStorageMemory` can ever possibly reach. We may need
   // to revisit whether reporting this value as the "max" is intuitive to the user.
-  private val maxMemory =
-    memoryManager.maxOnHeapStorageMemory + memoryManager.maxOffHeapStorageMemory
+  private val maxMemory = memoryManager.maxOnHeapStorageMemory
 
   // Port used by the external shuffle service. In Yarn mode, this may be already be
   // set through the Hadoop configuration as the server is launched in the Yarn NM.
@@ -232,7 +231,7 @@ private[spark] class BlockManager(
    */
   def reregister(): Unit = {
     // TODO: We might need to rate limit re-registering.
-    logInfo(s"BlockManager $blockManagerId re-registering with master")
+    logInfo("BlockManager re-registering with master")
     master.registerBlockManager(blockManagerId, maxMemory, slaveEndpoint)
     reportAllBlocks()
   }
@@ -404,17 +403,6 @@ private[spark] class BlockManager(
   }
 
   /**
-   * Cleanup code run in response to a failed local read.
-   * Must be called while holding a read lock on the block.
-   */
-  private def handleLocalReadFailure(blockId: BlockId): Nothing = {
-    releaseLock(blockId)
-    // Remove the missing block so that its unavailability is reported to the driver
-    removeBlock(blockId)
-    throw new SparkException(s"Block $blockId was not found even though it's read-locked")
-  }
-
-  /**
    * Get block from local block manager as an iterator of Java objects.
    */
   def getLocalValues(blockId: BlockId): Option[BlockResult] = {
@@ -453,7 +441,8 @@ private[spark] class BlockManager(
           val ci = CompletionIterator[Any, Iterator[Any]](iterToReturn, releaseLock(blockId))
           Some(new BlockResult(ci, DataReadMethod.Disk, info.size))
         } else {
-          handleLocalReadFailure(blockId)
+          releaseLock(blockId)
+          throw new SparkException(s"Block $blockId was not found even though it's read-locked")
         }
     }
   }
@@ -498,10 +487,10 @@ private[spark] class BlockManager(
         diskStore.getBytes(blockId)
       } else if (level.useMemory && memoryStore.contains(blockId)) {
         // The block was not found on disk, so serialize an in-memory copy:
-        serializerManager.dataSerializeWithExplicitClassTag(
-          blockId, memoryStore.getValues(blockId).get, info.classTag)
+        serializerManager.dataSerialize(blockId, memoryStore.getValues(blockId).get)
       } else {
-        handleLocalReadFailure(blockId)
+        releaseLock(blockId)
+        throw new SparkException(s"Block $blockId was not found even though it's read-locked")
       }
     } else {  // storage level is serialized
       if (level.useMemory && memoryStore.contains(blockId)) {
@@ -510,7 +499,8 @@ private[spark] class BlockManager(
         val diskBytes = diskStore.getBytes(blockId)
         maybeCacheDiskBytesInMemory(info, blockId, level, diskBytes).getOrElse(diskBytes)
       } else {
-        handleLocalReadFailure(blockId)
+        releaseLock(blockId)
+        throw new SparkException(s"Block $blockId was not found even though it's read-locked")
       }
     }
   }
@@ -721,9 +711,10 @@ private[spark] class BlockManager(
       serializerInstance: SerializerInstance,
       bufferSize: Int,
       writeMetrics: ShuffleWriteMetrics): DiskBlockObjectWriter = {
-    val wrapStream: OutputStream => OutputStream = serializerManager.wrapStream(blockId, _)
+    val compressStream: OutputStream => OutputStream =
+      serializerManager.wrapForCompression(blockId, _)
     val syncWrites = conf.getBoolean("spark.shuffle.sync", false)
-    new DiskBlockObjectWriter(file, serializerInstance, bufferSize, wrapStream,
+    new DiskBlockObjectWriter(file, serializerInstance, bufferSize, compressStream,
       syncWrites, writeMetrics, blockId)
   }
 
@@ -803,7 +794,7 @@ private[spark] class BlockManager(
       val putBlockStatus = getCurrentBlockStatus(blockId, info)
       val blockWasSuccessfullyStored = putBlockStatus.storageLevel.isValid
       if (blockWasSuccessfullyStored) {
-        // Now that the block is in either the memory or disk store,
+        // Now that the block is in either the memory, externalBlockStore, or disk store,
         // tell the master about it.
         info.size = size
         if (tellMaster) {
@@ -973,16 +964,8 @@ private[spark] class BlockManager(
         if (level.replication > 1) {
           val remoteStartTime = System.currentTimeMillis
           val bytesToReplicate = doGetLocalBytes(blockId, info)
-          // [SPARK-16550] Erase the typed classTag when using default serialization, since
-          // NettyBlockRpcServer crashes when deserializing repl-defined classes.
-          // TODO(ekl) remove this once the classloader issue on the remote end is fixed.
-          val remoteClassTag = if (!serializerManager.canUseKryo(classTag)) {
-            scala.reflect.classTag[Any]
-          } else {
-            classTag
-          }
           try {
-            replicate(blockId, bytesToReplicate, level, remoteClassTag)
+            replicate(blockId, bytesToReplicate, level, classTag)
           } finally {
             bytesToReplicate.dispose()
           }

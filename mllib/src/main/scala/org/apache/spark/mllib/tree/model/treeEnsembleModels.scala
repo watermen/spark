@@ -36,7 +36,7 @@ import org.apache.spark.mllib.tree.configuration.EnsembleCombiningStrategy._
 import org.apache.spark.mllib.tree.loss.Loss
 import org.apache.spark.mllib.util.{Loader, Saveable}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.SQLContext
 import org.apache.spark.util.Utils
 
 /**
@@ -151,24 +151,31 @@ class GradientBoostedTreesModel @Since("1.2.0") (
       case _ => data
     }
 
-    val broadcastTrees = sc.broadcast(trees)
+    val numIterations = trees.length
+    val evaluationArray = Array.fill(numIterations)(0.0)
     val localTreeWeights = treeWeights
-    val treesIndices = trees.indices
 
-    val dataCount = remappedData.count()
-    val evaluation = remappedData.map { point =>
-      treesIndices
-        .map(idx => broadcastTrees.value(idx).predict(point.features) * localTreeWeights(idx))
-        .scanLeft(0.0)(_ + _).drop(1)
-        .map(prediction => loss.computeError(prediction, point.label))
+    var predictionAndError = GradientBoostedTreesModel.computeInitialPredictionAndError(
+      remappedData, localTreeWeights(0), trees(0), loss)
+
+    evaluationArray(0) = predictionAndError.values.mean()
+
+    val broadcastTrees = sc.broadcast(trees)
+    (1 until numIterations).foreach { nTree =>
+      predictionAndError = remappedData.zip(predictionAndError).mapPartitions { iter =>
+        val currentTree = broadcastTrees.value(nTree)
+        val currentTreeWeight = localTreeWeights(nTree)
+        iter.map { case (point, (pred, error)) =>
+          val newPred = pred + currentTree.predict(point.features) * currentTreeWeight
+          val newError = loss.computeError(newPred, point.label)
+          (newPred, newError)
+        }
+      }
+      evaluationArray(nTree) = predictionAndError.values.mean()
     }
-    .aggregate(treesIndices.map(_ => 0.0))(
-      (aggregated, row) => treesIndices.map(idx => aggregated(idx) + row(idx)),
-      (a, b) => treesIndices.map(idx => a(idx) + b(idx)))
-    .map(_ / dataCount)
 
-    broadcastTrees.destroy()
-    evaluation.toArray
+    broadcastTrees.unpersist()
+    evaluationArray
   }
 
   override protected def formatVersion: String = GradientBoostedTreesModel.formatVersion
@@ -406,7 +413,8 @@ private[tree] object TreeEnsembleModel extends Logging {
     case class EnsembleNodeData(treeId: Int, node: NodeData)
 
     def save(sc: SparkContext, path: String, model: TreeEnsembleModel, className: String): Unit = {
-      val spark = SparkSession.builder().sparkContext(sc).getOrCreate()
+      val sqlContext = SQLContext.getOrCreate(sc)
+      import sqlContext.implicits._
 
       // SPARK-6120: We do a hacky check here so users understand why save() is failing
       //             when they run the ML guide example.
@@ -442,8 +450,8 @@ private[tree] object TreeEnsembleModel extends Logging {
       // Create Parquet data.
       val dataRDD = sc.parallelize(model.trees.zipWithIndex).flatMap { case (tree, treeId) =>
         tree.topNode.subtreeIterator.toSeq.map(node => NodeData(treeId, node))
-      }
-      spark.createDataFrame(dataRDD).write.parquet(Loader.dataPath(path))
+      }.toDF()
+      dataRDD.write.parquet(Loader.dataPath(path))
     }
 
     /**
@@ -464,10 +472,10 @@ private[tree] object TreeEnsembleModel extends Logging {
         sc: SparkContext,
         path: String,
         treeAlgo: String): Array[DecisionTreeModel] = {
-      val spark = SparkSession.builder().sparkContext(sc).getOrCreate()
-      import spark.implicits._
-      val nodes = spark.read.parquet(Loader.dataPath(path)).map(NodeData.apply)
-      val trees = constructTrees(nodes.rdd)
+      val datapath = Loader.dataPath(path)
+      val sqlContext = SQLContext.getOrCreate(sc)
+      val nodes = sqlContext.read.parquet(datapath).rdd.map(NodeData.apply)
+      val trees = constructTrees(nodes)
       trees.map(new DecisionTreeModel(_, Algo.fromString(treeAlgo)))
     }
   }

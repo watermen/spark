@@ -42,20 +42,12 @@ class BlockManagerMaster(
     logInfo("Removed " + execId + " successfully in removeExecutor")
   }
 
-  /** Request removal of a dead executor from the driver endpoint.
-   *  This is only called on the driver side. Non-blocking
-   */
-  def removeExecutorAsync(execId: String) {
-    driverEndpoint.ask[Boolean](RemoveExecutor(execId))
-    logInfo("Removal of executor " + execId + " requested")
-  }
-
   /** Register the BlockManager's id with the driver. */
   def registerBlockManager(
       blockManagerId: BlockManagerId, maxMemSize: Long, slaveEndpoint: RpcEndpointRef): Unit = {
-    logInfo(s"Registering BlockManager $blockManagerId")
+    logInfo("Trying to register BlockManager")
     tell(RegisterBlockManager(blockManagerId, maxMemSize, slaveEndpoint))
-    logInfo(s"Registered BlockManager $blockManagerId")
+    logInfo("Registered BlockManager")
   }
 
   def updateBlockInfo(

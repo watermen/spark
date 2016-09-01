@@ -149,9 +149,10 @@ object DecisionTreeRunner {
       }
     }
 
-    parser.parse(args, defaultParams) match {
-      case Some(params) => run(params)
-      case _ => sys.exit(1)
+    parser.parse(args, defaultParams).map { params =>
+      run(params)
+    }.getOrElse {
+      sys.exit(1)
     }
   }
 
@@ -252,7 +253,7 @@ object DecisionTreeRunner {
     (training, test, numClasses)
   }
 
-  def run(params: Params): Unit = {
+  def run(params: Params) {
 
     val conf = new SparkConf().setAppName(s"DecisionTreeRunner with $params")
     val sc = new SparkContext(conf)
@@ -294,10 +295,11 @@ object DecisionTreeRunner {
       }
       if (params.algo == Classification) {
         val trainAccuracy =
-          new MulticlassMetrics(training.map(lp => (model.predict(lp.features), lp.label))).accuracy
+          new MulticlassMetrics(training.map(lp => (model.predict(lp.features), lp.label)))
+            .precision
         println(s"Train accuracy = $trainAccuracy")
         val testAccuracy =
-          new MulticlassMetrics(test.map(lp => (model.predict(lp.features), lp.label))).accuracy
+          new MulticlassMetrics(test.map(lp => (model.predict(lp.features), lp.label))).precision
         println(s"Test accuracy = $testAccuracy")
       }
       if (params.algo == Regression) {
@@ -320,10 +322,11 @@ object DecisionTreeRunner {
           println(model) // Print model summary.
         }
         val trainAccuracy =
-          new MulticlassMetrics(training.map(lp => (model.predict(lp.features), lp.label))).accuracy
+          new MulticlassMetrics(training.map(lp => (model.predict(lp.features), lp.label)))
+            .precision
         println(s"Train accuracy = $trainAccuracy")
         val testAccuracy =
-          new MulticlassMetrics(test.map(lp => (model.predict(lp.features), lp.label))).accuracy
+          new MulticlassMetrics(test.map(lp => (model.predict(lp.features), lp.label))).precision
         println(s"Test accuracy = $testAccuracy")
       }
       if (params.algo == Regression) {

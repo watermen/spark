@@ -25,12 +25,11 @@ import org.apache.spark.sql.{QueryTest, Row}
 import org.apache.spark.sql.hive.test.TestHiveSingleton
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
-import org.apache.spark.util.Utils
 
 case class OrcData(intField: Int, stringField: String)
 
 abstract class OrcSuite extends QueryTest with TestHiveSingleton with BeforeAndAfterAll {
-  import spark._
+  import hiveContext._
 
   var orcTableDir: File = null
   var orcTableAsDir: File = null
@@ -38,10 +37,14 @@ abstract class OrcSuite extends QueryTest with TestHiveSingleton with BeforeAndA
   override def beforeAll(): Unit = {
     super.beforeAll()
 
-    orcTableAsDir = Utils.createTempDir("orctests", "sparksql")
+    orcTableAsDir = File.createTempFile("orctests", "sparksql")
+    orcTableAsDir.delete()
+    orcTableAsDir.mkdir()
 
     // Hack: to prepare orc data files using hive external tables
-    orcTableDir = Utils.createTempDir("orctests", "sparksql")
+    orcTableDir = File.createTempFile("orctests", "sparksql")
+    orcTableDir.delete()
+    orcTableDir.mkdir()
     import org.apache.spark.sql.hive.test.TestHive.implicits._
 
     sparkContext
@@ -63,6 +66,15 @@ abstract class OrcSuite extends QueryTest with TestHiveSingleton with BeforeAndA
       s"""INSERT INTO TABLE normal_orc
          |SELECT intField, stringField FROM orc_temp_table
        """.stripMargin)
+  }
+
+  override def afterAll(): Unit = {
+    try {
+      orcTableDir.delete()
+      orcTableAsDir.delete()
+    } finally {
+      super.afterAll()
+    }
   }
 
   test("create temporary orc table") {
@@ -152,16 +164,16 @@ class OrcSourceSuite extends OrcSuite {
   override def beforeAll(): Unit = {
     super.beforeAll()
 
-    spark.sql(
-      s"""CREATE TEMPORARY VIEW normal_orc_source
+    hiveContext.sql(
+      s"""CREATE TEMPORARY TABLE normal_orc_source
          |USING org.apache.spark.sql.hive.orc
          |OPTIONS (
          |  PATH '${new File(orcTableAsDir.getAbsolutePath).getCanonicalPath}'
          |)
        """.stripMargin)
 
-    spark.sql(
-      s"""CREATE TEMPORARY VIEW normal_orc_as_source
+    hiveContext.sql(
+      s"""CREATE TEMPORARY TABLE normal_orc_as_source
          |USING org.apache.spark.sql.hive.orc
          |OPTIONS (
          |  PATH '${new File(orcTableAsDir.getAbsolutePath).getCanonicalPath}'

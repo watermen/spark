@@ -72,24 +72,24 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   /**
    * Return all metadata that describes more details of this SparkPlan.
    */
-  def metadata: Map[String, String] = Map.empty
+  private[sql] def metadata: Map[String, String] = Map.empty
 
   /**
    * Return all metrics containing metrics of this SparkPlan.
    */
-  def metrics: Map[String, SQLMetric] = Map.empty
+  private[sql] def metrics: Map[String, SQLMetric] = Map.empty
 
   /**
    * Reset all the metrics.
    */
-  def resetMetrics(): Unit = {
+  private[sql] def resetMetrics(): Unit = {
     metrics.valuesIterator.foreach(_.reset())
   }
 
   /**
    * Return a LongSQLMetric according to the name.
    */
-  def longMetric(name: String): SQLMetric = metrics(name)
+  private[sql] def longMetric(name: String): SQLMetric = metrics(name)
 
   // TODO: Move to `DistributedPlan`
   /** Specifies how data is partitioned across different nodes in the cluster. */
@@ -142,18 +142,21 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
    * This list is populated by [[prepareSubqueries]], which is called in [[prepare]].
    */
   @transient
-  private val runningSubqueries = new ArrayBuffer[ExecSubqueryExpression]
+  private val subqueryResults = new ArrayBuffer[(ScalarSubquery, Future[Array[InternalRow]])]
 
   /**
    * Finds scalar subquery expressions in this plan node and starts evaluating them.
+   * The list of subqueries are added to [[subqueryResults]].
    */
   protected def prepareSubqueries(): Unit = {
-    expressions.foreach {
-      _.collect {
-        case e: ExecSubqueryExpression =>
-          e.plan.prepare()
-          runningSubqueries += e
-      }
+    val allSubqueries = expressions.flatMap(_.collect {case e: ScalarSubquery => e})
+    allSubqueries.asInstanceOf[Seq[ScalarSubquery]].foreach { e =>
+      val futureResult = Future {
+        // Each subquery should return only one row (and one column). We take two here and throws
+        // an exception later if the number of rows is greater than one.
+        e.executedPlan.executeTake(2)
+      }(SparkPlan.subqueryExecutionContext)
+      subqueryResults += e -> futureResult
     }
   }
 
@@ -162,10 +165,21 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
    */
   protected def waitForSubqueries(): Unit = synchronized {
     // fill in the result of subqueries
-    runningSubqueries.foreach { sub =>
-      sub.updateResult()
+    subqueryResults.foreach { case (e, futureResult) =>
+      val rows = ThreadUtils.awaitResult(futureResult, Duration.Inf)
+      if (rows.length > 1) {
+        sys.error(s"more than one row returned by a subquery used as an expression:\n${e.plan}")
+      }
+      if (rows.length == 1) {
+        assert(rows(0).numFields == 1,
+          s"Expects 1 field, but got ${rows(0).numFields}; something went wrong in analysis")
+        e.updateResult(rows(0).get(0, e.dataType))
+      } else {
+        // If there is no rows returned, the result should be null.
+        e.updateResult(null)
+      }
     }
-    runningSubqueries.clear()
+    subqueryResults.clear()
   }
 
   /**
@@ -381,7 +395,7 @@ object SparkPlan {
     ThreadUtils.newDaemonCachedThreadPool("subquery", 16))
 }
 
-trait LeafExecNode extends SparkPlan {
+private[sql] trait LeafExecNode extends SparkPlan {
   override def children: Seq[SparkPlan] = Nil
   override def producedAttributes: AttributeSet = outputSet
 }
@@ -393,7 +407,7 @@ object UnaryExecNode {
   }
 }
 
-trait UnaryExecNode extends SparkPlan {
+private[sql] trait UnaryExecNode extends SparkPlan {
   def child: SparkPlan
 
   override def children: Seq[SparkPlan] = child :: Nil
@@ -401,7 +415,7 @@ trait UnaryExecNode extends SparkPlan {
   override def outputPartitioning: Partitioning = child.outputPartitioning
 }
 
-trait BinaryExecNode extends SparkPlan {
+private[sql] trait BinaryExecNode extends SparkPlan {
   def left: SparkPlan
   def right: SparkPlan
 

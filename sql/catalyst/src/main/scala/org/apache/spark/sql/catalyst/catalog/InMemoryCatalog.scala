@@ -22,9 +22,9 @@ import java.io.IOException
 import scala.collection.mutable
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileSystem, Path}
 
-import org.apache.spark.{SparkConf, SparkException}
+import org.apache.spark.SparkException
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis._
@@ -39,11 +39,7 @@ import org.apache.spark.sql.catalyst.util.StringUtils
  *
  * All public methods should be synchronized for thread-safety.
  */
-class InMemoryCatalog(
-    conf: SparkConf = new SparkConf,
-    hadoopConfig: Configuration = new Configuration)
-  extends ExternalCatalog {
-
+class InMemoryCatalog(hadoopConfig: Configuration = new Configuration) extends ExternalCatalog {
   import CatalogTypes.TablePartitionSpec
 
   private class TableDesc(var table: CatalogTable) {
@@ -109,6 +105,8 @@ class InMemoryCatalog(
     }
   }
 
+  private val fs = FileSystem.get(hadoopConfig)
+
   // --------------------------------------------------------------------------
   // Databases
   // --------------------------------------------------------------------------
@@ -122,9 +120,7 @@ class InMemoryCatalog(
       }
     } else {
       try {
-        val location = new Path(dbDefinition.locationUri)
-        val fs = location.getFileSystem(hadoopConfig)
-        fs.mkdirs(location)
+        fs.mkdirs(new Path(dbDefinition.locationUri))
       } catch {
         case e: IOException =>
           throw new SparkException(s"Unable to create database ${dbDefinition.name} as failed " +
@@ -151,9 +147,7 @@ class InMemoryCatalog(
       // Remove the database.
       val dbDefinition = catalog(db).db
       try {
-        val location = new Path(dbDefinition.locationUri)
-        val fs = location.getFileSystem(hadoopConfig)
-        fs.delete(location, true)
+        fs.delete(new Path(dbDefinition.locationUri), true)
       } catch {
         case e: IOException =>
           throw new SparkException(s"Unable to drop database ${dbDefinition.name} as failed " +
@@ -182,7 +176,7 @@ class InMemoryCatalog(
   }
 
   override def listDatabases(): Seq[String] = synchronized {
-    catalog.keySet.toSeq.sorted
+    catalog.keySet.toSeq
   }
 
   override def listDatabases(pattern: String): Seq[String] = synchronized {
@@ -196,10 +190,9 @@ class InMemoryCatalog(
   // --------------------------------------------------------------------------
 
   override def createTable(
+      db: String,
       tableDefinition: CatalogTable,
       ignoreIfExists: Boolean): Unit = synchronized {
-    assert(tableDefinition.identifier.database.isDefined)
-    val db = tableDefinition.identifier.database.get
     requireDbExists(db)
     val table = tableDefinition.identifier.table
     if (tableExists(db, table)) {
@@ -210,7 +203,6 @@ class InMemoryCatalog(
       if (tableDefinition.tableType == CatalogTableType.MANAGED) {
         val dir = new Path(catalog(db).db.locationUri, table)
         try {
-          val fs = dir.getFileSystem(hadoopConfig)
           fs.mkdirs(dir)
         } catch {
           case e: IOException =>
@@ -225,14 +217,12 @@ class InMemoryCatalog(
   override def dropTable(
       db: String,
       table: String,
-      ignoreIfNotExists: Boolean,
-      purge: Boolean): Unit = synchronized {
+      ignoreIfNotExists: Boolean): Unit = synchronized {
     requireDbExists(db)
     if (tableExists(db, table)) {
       if (getTable(db, table).tableType == CatalogTableType.MANAGED) {
         val dir = new Path(catalog(db).db.locationUri, table)
         try {
-          val fs = dir.getFileSystem(hadoopConfig)
           fs.delete(dir, true)
         } catch {
           case e: IOException =>
@@ -258,7 +248,6 @@ class InMemoryCatalog(
       val oldDir = new Path(catalog(db).db.locationUri, oldName)
       val newDir = new Path(catalog(db).db.locationUri, newName)
       try {
-        val fs = oldDir.getFileSystem(hadoopConfig)
         fs.rename(oldDir, newDir)
       } catch {
         case e: IOException =>
@@ -271,9 +260,7 @@ class InMemoryCatalog(
     catalog(db).tables.remove(oldName)
   }
 
-  override def alterTable(tableDefinition: CatalogTable): Unit = synchronized {
-    assert(tableDefinition.identifier.database.isDefined)
-    val db = tableDefinition.identifier.database.get
+  override def alterTable(db: String, tableDefinition: CatalogTable): Unit = synchronized {
     requireTableExists(db, tableDefinition.identifier.table)
     catalog(db).tables(tableDefinition.identifier.table).table = tableDefinition
   }
@@ -294,7 +281,7 @@ class InMemoryCatalog(
 
   override def listTables(db: String): Seq[String] = synchronized {
     requireDbExists(db)
-    catalog(db).tables.keySet.toSeq.sorted
+    catalog(db).tables.keySet.toSeq
   }
 
   override def listTables(db: String, pattern: String): Seq[String] = synchronized {
@@ -351,7 +338,6 @@ class InMemoryCatalog(
           p.spec.get(col).map(col + "=" + _)
         }.mkString("/")
         try {
-          val fs = tableDir.getFileSystem(hadoopConfig)
           fs.mkdirs(new Path(tableDir, partitionPath))
         } catch {
           case e: IOException =>
@@ -366,8 +352,7 @@ class InMemoryCatalog(
       db: String,
       table: String,
       partSpecs: Seq[TablePartitionSpec],
-      ignoreIfNotExists: Boolean,
-      purge: Boolean): Unit = synchronized {
+      ignoreIfNotExists: Boolean): Unit = synchronized {
     requireTableExists(db, table)
     val existingParts = catalog(db).tables(table).partitions
     if (!ignoreIfNotExists) {
@@ -388,7 +373,6 @@ class InMemoryCatalog(
           p.get(col).map(col + "=" + _)
         }.mkString("/")
         try {
-          val fs = tableDir.getFileSystem(hadoopConfig)
           fs.delete(new Path(tableDir, partitionPath), true)
         } catch {
           case e: IOException =>
@@ -425,7 +409,6 @@ class InMemoryCatalog(
           newSpec.get(col).map(col + "=" + _)
         }.mkString("/")
         try {
-          val fs = tableDir.getFileSystem(hadoopConfig)
           fs.rename(new Path(tableDir, oldPath), new Path(tableDir, newPath))
         } catch {
           case e: IOException =>

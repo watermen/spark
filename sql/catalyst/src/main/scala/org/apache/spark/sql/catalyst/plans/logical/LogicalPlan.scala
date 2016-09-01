@@ -127,7 +127,7 @@ abstract class LogicalPlan extends QueryPlan[LogicalPlan] with Logging {
    */
   def resolve(schema: StructType, resolver: Resolver): Seq[Attribute] = {
     schema.map { field =>
-      resolve(field.name :: Nil, resolver).map {
+      resolveQuoted(field.name, resolver).map {
         case a: AttributeReference => a
         case other => sys.error(s"can not handle nested schema yet...  plan $this")
       }.getOrElse {
@@ -265,11 +265,6 @@ abstract class LogicalPlan extends QueryPlan[LogicalPlan] with Logging {
           s"Reference '$name' is ambiguous, could be: $referenceNames.")
     }
   }
-
-  /**
-   * Refreshes (or invalidates) any metadata/data cached in the plan recursively.
-   */
-  def refresh(): Unit = children.foreach(_.refresh())
 }
 
 /**

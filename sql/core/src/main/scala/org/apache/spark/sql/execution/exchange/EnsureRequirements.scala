@@ -236,16 +236,7 @@ case class EnsureRequirements(conf: SQLConf) extends Rule[SparkPlan] {
     children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
       if (requiredOrdering.nonEmpty) {
         // If child.outputOrdering is [a, b] and requiredOrdering is [a], we do not need to sort.
-        val orderingMatched = if (requiredOrdering.length > child.outputOrdering.length) {
-          false
-        } else {
-          requiredOrdering.zip(child.outputOrdering).forall {
-            case (requiredOrder, childOutputOrder) =>
-              requiredOrder.semanticEquals(childOutputOrder)
-          }
-        }
-
-        if (!orderingMatched) {
+        if (requiredOrdering != child.outputOrdering.take(requiredOrdering.length)) {
           SortExec(requiredOrdering, global = false, child = child)
         } else {
           child

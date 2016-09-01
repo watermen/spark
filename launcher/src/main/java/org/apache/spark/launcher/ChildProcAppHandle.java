@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadFactory;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -30,6 +31,8 @@ import java.util.logging.Logger;
 class ChildProcAppHandle implements SparkAppHandle {
 
   private static final Logger LOG = Logger.getLogger(ChildProcAppHandle.class.getName());
+  private static final ThreadFactory REDIRECTOR_FACTORY =
+    new NamedThreadFactory("launcher-proc-%d");
 
   private final String secret;
   private final LauncherServer server;
@@ -124,7 +127,7 @@ class ChildProcAppHandle implements SparkAppHandle {
   void setChildProc(Process childProc, String loggerName) {
     this.childProc = childProc;
     this.redirector = new OutputRedirector(childProc.getInputStream(), loggerName,
-      SparkLauncher.REDIRECTOR_FACTORY);
+      REDIRECTOR_FACTORY);
   }
 
   void setConnection(LauncherConnection connection) {

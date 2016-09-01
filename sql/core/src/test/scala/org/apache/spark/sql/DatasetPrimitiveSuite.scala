@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql
 
+import scala.language.postfixOps
+
 import org.apache.spark.sql.test.SharedSQLContext
 
 case class IntClass(value: Int)
@@ -80,7 +82,7 @@ class DatasetPrimitiveSuite extends QueryTest with SharedSQLContext {
   test("groupBy function, keys") {
     val ds = Seq(1, 2, 3, 4, 5).toDS()
     val grouped = ds.groupByKey(_ % 2)
-    checkDatasetUnorderly(
+    checkDataset(
       grouped.keys,
       0, 1)
   }
@@ -93,7 +95,7 @@ class DatasetPrimitiveSuite extends QueryTest with SharedSQLContext {
       (name, iter.size)
     }
 
-    checkDatasetUnorderly(
+    checkDataset(
       agged,
       ("even", 5), ("odd", 6))
   }
@@ -103,7 +105,7 @@ class DatasetPrimitiveSuite extends QueryTest with SharedSQLContext {
     val grouped = ds.groupByKey(_.length)
     val agged = grouped.flatMapGroups { case (g, iter) => Iterator(g.toString, iter.mkString) }
 
-    checkDatasetUnorderly(
+    checkDataset(
       agged,
       "1", "abc", "3", "xyz", "5", "hello")
   }

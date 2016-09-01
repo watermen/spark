@@ -34,7 +34,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
 import org.apache.spark.mllib.util.{Loader, Saveable}
 import org.apache.spark.rdd._
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.SQLContext
 import org.apache.spark.util.Utils
 import org.apache.spark.util.random.XORShiftRandom
 
@@ -430,13 +430,10 @@ class Word2Vec extends Serializable with Logging {
         }
         i += 1
       }
-      bcSyn0Global.destroy(false)
-      bcSyn1Global.destroy(false)
+      bcSyn0Global.unpersist(false)
+      bcSyn1Global.unpersist(false)
     }
     newSentences.unpersist()
-    expTable.destroy(false)
-    bcVocab.destroy(false)
-    bcVocabHash.destroy(false)
 
     val wordArray = vocab.map(_.word)
     new Word2VecModel(wordArray.zipWithIndex.toMap, syn0Global)
@@ -612,8 +609,9 @@ object Word2VecModel extends Loader[Word2VecModel] {
     case class Data(word: String, vector: Array[Float])
 
     def load(sc: SparkContext, path: String): Word2VecModel = {
-      val spark = SparkSession.builder().sparkContext(sc).getOrCreate()
-      val dataFrame = spark.read.parquet(Loader.dataPath(path))
+      val dataPath = Loader.dataPath(path)
+      val sqlContext = SQLContext.getOrCreate(sc)
+      val dataFrame = sqlContext.read.parquet(dataPath)
       // Check schema explicitly since erasure makes it hard to use match-case for checking.
       Loader.checkSchema[Data](dataFrame.schema)
 
@@ -623,7 +621,9 @@ object Word2VecModel extends Loader[Word2VecModel] {
     }
 
     def save(sc: SparkContext, path: String, model: Map[String, Array[Float]]): Unit = {
-      val spark = SparkSession.builder().sparkContext(sc).getOrCreate()
+
+      val sqlContext = SQLContext.getOrCreate(sc)
+      import sqlContext.implicits._
 
       val vectorSize = model.values.head.length
       val numWords = model.size
@@ -632,18 +632,16 @@ object Word2VecModel extends Loader[Word2VecModel] {
         ("vectorSize" -> vectorSize) ~ ("numWords" -> numWords)))
       sc.parallelize(Seq(metadata), 1).saveAsTextFile(Loader.metadataPath(path))
 
-      // We want to partition the model in partitions smaller than
-      // spark.kryoserializer.buffer.max
-      val bufferSize = Utils.byteStringAsBytes(
-        spark.conf.get("spark.kryoserializer.buffer.max", "64m"))
+      // We want to partition the model in partitions of size 32MB
+      val partitionSize = (1L << 25)
       // We calculate the approximate size of the model
-      // We only calculate the array size, considering an
-      // average string size of 15 bytes, the formula is:
-      // (floatSize * vectorSize + 15) * numWords
-      val approxSize = (4L * vectorSize + 15) * numWords
-      val nPartitions = ((approxSize / bufferSize) + 1).toInt
+      // We only calculate the array size, not considering
+      // the string size, the formula is:
+      // floatSize * numWords * vectorSize
+      val approxSize = 4L * numWords * vectorSize
+      val nPartitions = ((approxSize / partitionSize) + 1).toInt
       val dataArray = model.toSeq.map { case (w, v) => Data(w, v) }
-      spark.createDataFrame(dataArray).repartition(nPartitions).write.parquet(Loader.dataPath(path))
+      sc.parallelize(dataArray.toSeq, nPartitions).toDF().write.parquet(Loader.dataPath(path))
     }
   }
 

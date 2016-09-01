@@ -25,10 +25,11 @@ import org.apache.hadoop.io.{NullWritable, Text}
 import org.apache.hadoop.mapreduce.{Job, RecordWriter, TaskAttemptContext}
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat
 
+import org.apache.spark.annotation.Since
 import org.apache.spark.ml.feature.LabeledPoint
 import org.apache.spark.ml.linalg.{Vector, Vectors, VectorUDT}
 import org.apache.spark.mllib.util.MLUtils
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, DataFrameReader, Row, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
@@ -50,7 +51,7 @@ private[libsvm] class LibSVMOutputWriter(
     new TextOutputFormat[NullWritable, Text]() {
       override def getDefaultWorkFile(context: TaskAttemptContext, extension: String): Path = {
         val configuration = context.getConfiguration
-        val uniqueWriteJobId = configuration.get(WriterContainer.DATASOURCE_WRITEJOBUUID)
+        val uniqueWriteJobId = configuration.get("spark.sql.sources.writeJobUUID")
         val taskAttemptId = context.getTaskAttemptID
         val split = taskAttemptId.getTaskID.getId
         new Path(path, f"part-r-$split%05d-$uniqueWriteJobId$extension")
@@ -75,21 +76,48 @@ private[libsvm] class LibSVMOutputWriter(
   }
 }
 
-/** @see [[LibSVMDataSource]] for public documentation. */
-// If this is moved or renamed, please update DataSource's backwardCompatibilityMap.
-private[libsvm] class LibSVMFileFormat extends TextBasedFileFormat with DataSourceRegister {
+/**
+ * `libsvm` package implements Spark SQL data source API for loading LIBSVM data as [[DataFrame]].
+ * The loaded [[DataFrame]] has two columns: `label` containing labels stored as doubles and
+ * `features` containing feature vectors stored as [[Vector]]s.
+ *
+ * To use LIBSVM data source, you need to set "libsvm" as the format in [[DataFrameReader]] and
+ * optionally specify options, for example:
+ * {{{
+ *   // Scala
+ *   val df = spark.read.format("libsvm")
+ *     .option("numFeatures", "780")
+ *     .load("data/mllib/sample_libsvm_data.txt")
+ *
+ *   // Java
+ *   DataFrame df = spark.read().format("libsvm")
+ *     .option("numFeatures, "780")
+ *     .load("data/mllib/sample_libsvm_data.txt");
+ * }}}
+ *
+ * LIBSVM data source supports the following options:
+ *  - "numFeatures": number of features.
+ *    If unspecified or nonpositive, the number of features will be determined automatically at the
+ *    cost of one additional pass.
+ *    This is also useful when the dataset is already split into multiple files and you want to load
+ *    them separately, because some features may not present in certain files, which leads to
+ *    inconsistent feature dimensions.
+ *  - "vectorType": feature vector type, "sparse" (default) or "dense".
+ *
+ *  @see [[https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/ LIBSVM datasets]]
+ */
+@Since("1.6.0")
+class DefaultSource extends FileFormat with DataSourceRegister {
 
+  @Since("1.6.0")
   override def shortName(): String = "libsvm"
 
   override def toString: String = "LibSVM"
 
   private def verifySchema(dataSchema: StructType): Unit = {
-    if (
-      dataSchema.size != 2 ||
-        !dataSchema(0).dataType.sameType(DataTypes.DoubleType) ||
-        !dataSchema(1).dataType.sameType(new VectorUDT()) ||
-        !(dataSchema(1).metadata.getLong("numFeatures").toInt > 0)
-    ) {
+    if (dataSchema.size != 2 ||
+      (!dataSchema(0).dataType.sameType(DataTypes.DoubleType)
+        || !dataSchema(1).dataType.sameType(new VectorUDT()))) {
       throw new IOException(s"Illegal schema for libsvm data, schema=$dataSchema")
     }
   }
@@ -98,8 +126,17 @@ private[libsvm] class LibSVMFileFormat extends TextBasedFileFormat with DataSour
       sparkSession: SparkSession,
       options: Map[String, String],
       files: Seq[FileStatus]): Option[StructType] = {
-    val numFeatures: Int = options.get("numFeatures").map(_.toInt).filter(_ > 0).getOrElse {
-      // Infers number of features if the user doesn't specify (a valid) one.
+    Some(
+      StructType(
+        StructField("label", DoubleType, nullable = false) ::
+        StructField("features", new VectorUDT(), nullable = false) :: Nil))
+  }
+
+  override def prepareRead(
+      sparkSession: SparkSession,
+      options: Map[String, String],
+      files: Seq[FileStatus]): Map[String, String] = {
+    def computeNumFeatures(): Int = {
       val dataFiles = files.filterNot(_.getPath.getName startsWith "_")
       val path = if (dataFiles.length == 1) {
         dataFiles.head.getPath.toUri.toString
@@ -114,14 +151,11 @@ private[libsvm] class LibSVMFileFormat extends TextBasedFileFormat with DataSour
       MLUtils.computeNumFeatures(parsed)
     }
 
-    val featuresMetadata = new MetadataBuilder()
-      .putLong("numFeatures", numFeatures)
-      .build()
+    val numFeatures = options.get("numFeatures").filter(_.toInt > 0).getOrElse {
+      computeNumFeatures()
+    }
 
-    Some(
-      StructType(
-        StructField("label", DoubleType, nullable = false) ::
-        StructField("features", new VectorUDT(), nullable = false, featuresMetadata) :: Nil))
+    new CaseInsensitiveMap(options + ("numFeatures" -> numFeatures.toString))
   }
 
   override def prepareWrite(
@@ -150,7 +184,7 @@ private[libsvm] class LibSVMFileFormat extends TextBasedFileFormat with DataSour
       options: Map[String, String],
       hadoopConf: Configuration): (PartitionedFile) => Iterator[InternalRow] = {
     verifySchema(dataSchema)
-    val numFeatures = dataSchema("features").metadata.getLong("numFeatures").toInt
+    val numFeatures = options("numFeatures").toInt
     assert(numFeatures > 0)
 
     val sparse = options.getOrElse("vectorType", "sparse") == "sparse"

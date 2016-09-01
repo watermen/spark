@@ -17,8 +17,6 @@
 
 package org.apache.spark.sql
 
-import scala.language.existentials
-
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.execution.joins._
@@ -62,7 +60,7 @@ class JoinSuite extends QueryTest with SharedSQLContext {
   }
 
   test("join operator selection") {
-    spark.sharedState.cacheManager.clearCache()
+    spark.cacheManager.clearCache()
 
     withSQLConf("spark.sql.autoBroadcastJoinThreshold" -> "0",
       SQLConf.CROSS_JOINS_ENABLED.key -> "true") {
@@ -115,7 +113,7 @@ class JoinSuite extends QueryTest with SharedSQLContext {
 //  }
 
   test("broadcasted hash join operator selection") {
-    spark.sharedState.cacheManager.clearCache()
+    spark.cacheManager.clearCache()
     sql("CACHE TABLE testData")
     Seq(
       ("SELECT * FROM testData join testData2 ON key = a",
@@ -129,7 +127,7 @@ class JoinSuite extends QueryTest with SharedSQLContext {
   }
 
   test("broadcasted hash outer join operator selection") {
-    spark.sharedState.cacheManager.clearCache()
+    spark.cacheManager.clearCache()
     sql("CACHE TABLE testData")
     sql("CACHE TABLE testData2")
     Seq(
@@ -452,7 +450,7 @@ class JoinSuite extends QueryTest with SharedSQLContext {
   }
 
   test("broadcasted existence join operator selection") {
-    spark.sharedState.cacheManager.clearCache()
+    spark.cacheManager.clearCache()
     sql("CACHE TABLE testData")
 
     withSQLConf(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> Long.MaxValue.toString) {

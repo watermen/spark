@@ -19,9 +19,6 @@ package org.apache.spark.sql.catalyst.expressions.codegen
 
 import java.io.ObjectInputStream
 
-import com.esotericsoftware.kryo.{Kryo, KryoSerializable}
-import com.esotericsoftware.kryo.io.{Input, Output}
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -150,8 +147,7 @@ object GenerateOrdering extends CodeGenerator[Seq[SortOrder], Ordering[InternalR
 /**
  * A lazily generated row ordering comparator.
  */
-class LazilyGeneratedOrdering(val ordering: Seq[SortOrder])
-  extends Ordering[InternalRow] with KryoSerializable {
+class LazilyGeneratedOrdering(val ordering: Seq[SortOrder]) extends Ordering[InternalRow] {
 
   def this(ordering: Seq[SortOrder], inputSchema: Seq[Attribute]) =
     this(ordering.map(BindReferences.bindReference(_, inputSchema)))
@@ -166,14 +162,6 @@ class LazilyGeneratedOrdering(val ordering: Seq[SortOrder])
   private def readObject(in: ObjectInputStream): Unit = Utils.tryOrIOException {
     in.defaultReadObject()
     generatedOrdering = GenerateOrdering.generate(ordering)
-  }
-
-  override def write(kryo: Kryo, out: Output): Unit = Utils.tryOrIOException {
-    kryo.writeObject(out, ordering.toArray)
-  }
-
-  override def read(kryo: Kryo, in: Input): Unit = Utils.tryOrIOException {
-    generatedOrdering = GenerateOrdering.generate(kryo.readObject(in, classOf[Array[SortOrder]]))
   }
 }
 

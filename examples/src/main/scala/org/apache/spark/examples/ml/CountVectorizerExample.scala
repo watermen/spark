@@ -27,7 +27,7 @@ object CountVectorizerExample {
   def main(args: Array[String]) {
     val spark = SparkSession
       .builder
-      .appName("CountVectorizerExample")
+      .appName("CounterVectorizerExample")
       .getOrCreate()
 
     // $example on$
@@ -49,7 +49,7 @@ object CountVectorizerExample {
       .setInputCol("words")
       .setOutputCol("features")
 
-    cvModel.transform(df).show(false)
+    cvModel.transform(df).select("features").show()
     // $example off$
 
     spark.stop()

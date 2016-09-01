@@ -17,223 +17,195 @@
 
 package org.apache.spark.sql.sources
 
-import java.io.File
+import java.io.{File, IOException}
 
-import org.scalatest.BeforeAndAfterEach
+import org.scalatest.BeforeAndAfter
 
-import org.apache.spark.SparkException
 import org.apache.spark.sql.AnalysisException
-import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.parser.ParseException
-import org.apache.spark.sql.execution.command.DDLUtils
 import org.apache.spark.sql.test.SharedSQLContext
 import org.apache.spark.util.Utils
 
-class CreateTableAsSelectSuite
-  extends DataSourceTest
-  with SharedSQLContext
-  with BeforeAndAfterEach {
-
-  protected override lazy val sql = spark.sql _
+class CreateTableAsSelectSuite extends DataSourceTest with SharedSQLContext with BeforeAndAfter {
+  protected override lazy val sql = caseInsensitiveContext.sql _
   private var path: File = null
 
   override def beforeAll(): Unit = {
     super.beforeAll()
+    path = Utils.createTempDir()
     val rdd = sparkContext.parallelize((1 to 10).map(i => s"""{"a":$i, "b":"str${i}"}"""))
-    spark.read.json(rdd).createOrReplaceTempView("jt")
+    caseInsensitiveContext.read.json(rdd).createOrReplaceTempView("jt")
   }
 
   override def afterAll(): Unit = {
     try {
-      spark.catalog.dropTempView("jt")
-      Utils.deleteRecursively(path)
+      caseInsensitiveContext.dropTempTable("jt")
     } finally {
       super.afterAll()
     }
   }
 
-  override def beforeEach(): Unit = {
-    super.beforeEach()
-    path = Utils.createTempDir()
-    path.delete()
-  }
-
-  override def afterEach(): Unit = {
+  after {
     Utils.deleteRecursively(path)
-    super.afterEach()
   }
 
-  test("CREATE TABLE USING AS SELECT") {
-    withTable("jsonTable") {
+  test("CREATE TEMPORARY TABLE AS SELECT") {
+    sql(
+      s"""
+        |CREATE TEMPORARY TABLE jsonTable
+        |USING json
+        |OPTIONS (
+        |  path '${path.toString}'
+        |) AS
+        |SELECT a, b FROM jt
+      """.stripMargin)
+
+    checkAnswer(
+      sql("SELECT a, b FROM jsonTable"),
+      sql("SELECT a, b FROM jt").collect())
+
+    caseInsensitiveContext.dropTempTable("jsonTable")
+  }
+
+  test("CREATE TEMPORARY TABLE AS SELECT based on the file without write permission") {
+    val childPath = new File(path.toString, "child")
+    path.mkdir()
+    childPath.createNewFile()
+    path.setWritable(false)
+
+    val e = intercept[IOException] {
       sql(
         s"""
-           |CREATE TABLE jsonTable
+           |CREATE TEMPORARY TABLE jsonTable
            |USING json
            |OPTIONS (
            |  path '${path.toString}'
            |) AS
            |SELECT a, b FROM jt
-         """.stripMargin)
-
-      checkAnswer(
-        sql("SELECT a, b FROM jsonTable"),
-        sql("SELECT a, b FROM jt"))
-    }
-  }
-
-  test("CREATE TABLE USING AS SELECT based on the file without write permission") {
-    val childPath = new File(path.toString, "child")
-    path.mkdir()
-    path.setWritable(false)
-
-    val e = intercept[SparkException] {
-      sql(
-        s"""
-           |CREATE TABLE jsonTable
-           |USING json
-           |OPTIONS (
-           |  path '${childPath.toString}'
-           |) AS
-           |SELECT a, b FROM jt
-         """.stripMargin)
+        """.stripMargin)
       sql("SELECT a, b FROM jsonTable").collect()
     }
+    assert(e.getMessage().contains("Unable to clear output directory"))
 
-    assert(e.getMessage().contains("Job aborted"))
     path.setWritable(true)
   }
 
   test("create a table, drop it and create another one with the same name") {
-    withTable("jsonTable") {
+    sql(
+      s"""
+        |CREATE TEMPORARY TABLE jsonTable
+        |USING json
+        |OPTIONS (
+        |  path '${path.toString}'
+        |) AS
+        |SELECT a, b FROM jt
+      """.stripMargin)
+
+    checkAnswer(
+      sql("SELECT a, b FROM jsonTable"),
+      sql("SELECT a, b FROM jt").collect())
+
+    val message = intercept[ParseException]{
       sql(
         s"""
-           |CREATE TABLE jsonTable
-           |USING json
-           |OPTIONS (
-           |  path '${path.toString}'
-           |) AS
-           |SELECT a, b FROM jt
-         """.stripMargin)
+        |CREATE TEMPORARY TABLE IF NOT EXISTS jsonTable
+        |USING json
+        |OPTIONS (
+        |  path '${path.toString}'
+        |) AS
+        |SELECT a * 4 FROM jt
+      """.stripMargin)
+    }.getMessage
+    assert(message.toLowerCase.contains("operation not allowed"))
 
-      checkAnswer(
-        sql("SELECT a, b FROM jsonTable"),
-        sql("SELECT a, b FROM jt"))
+    // Overwrite the temporary table.
+    sql(
+      s"""
+        |CREATE TEMPORARY TABLE jsonTable
+        |USING json
+        |OPTIONS (
+        |  path '${path.toString}'
+        |) AS
+        |SELECT a * 4 FROM jt
+      """.stripMargin)
+    checkAnswer(
+      sql("SELECT * FROM jsonTable"),
+      sql("SELECT a * 4 FROM jt").collect())
 
-      // Creates a table of the same name with flag "if not exists", nothing happens
+    caseInsensitiveContext.dropTempTable("jsonTable")
+    // Explicitly delete the data.
+    if (path.exists()) Utils.deleteRecursively(path)
+
+    sql(
+      s"""
+        |CREATE TEMPORARY TABLE jsonTable
+        |USING json
+        |OPTIONS (
+        |  path '${path.toString}'
+        |) AS
+        |SELECT b FROM jt
+      """.stripMargin)
+
+    checkAnswer(
+      sql("SELECT * FROM jsonTable"),
+      sql("SELECT b FROM jt").collect())
+
+    caseInsensitiveContext.dropTempTable("jsonTable")
+  }
+
+  test("CREATE TEMPORARY TABLE AS SELECT with IF NOT EXISTS is not allowed") {
+    val message = intercept[ParseException]{
       sql(
         s"""
-           |CREATE TABLE IF NOT EXISTS jsonTable
-           |USING json
-           |OPTIONS (
-           |  path '${path.toString}'
-           |) AS
-           |SELECT a * 4 FROM jt
-         """.stripMargin)
-      checkAnswer(
-        sql("SELECT * FROM jsonTable"),
-        sql("SELECT a, b FROM jt"))
+        |CREATE TEMPORARY TABLE IF NOT EXISTS jsonTable
+        |USING json
+        |OPTIONS (
+        |  path '${path.toString}'
+        |) AS
+        |SELECT b FROM jt
+      """.stripMargin)
+    }.getMessage
+    assert(message.toLowerCase.contains("operation not allowed"))
+  }
 
-      // Explicitly drops the table and deletes the underlying data.
-      sql("DROP TABLE jsonTable")
-      if (path.exists()) Utils.deleteRecursively(path)
-
-      // Creates a table of the same name again, this time we succeed.
+  test("a CTAS statement with column definitions is not allowed") {
+    intercept[AnalysisException]{
       sql(
         s"""
-           |CREATE TABLE jsonTable
-           |USING json
-           |OPTIONS (
-           |  path '${path.toString}'
-           |) AS
-           |SELECT b FROM jt
-         """.stripMargin)
-
-      checkAnswer(
-        sql("SELECT * FROM jsonTable"),
-        sql("SELECT b FROM jt"))
+        |CREATE TEMPORARY TABLE jsonTable (a int, b string)
+        |USING json
+        |OPTIONS (
+        |  path '${path.toString}'
+        |) AS
+        |SELECT a, b FROM jt
+      """.stripMargin)
     }
   }
 
-  test("disallows CREATE TEMPORARY TABLE ... USING ... AS query") {
-    withTable("t") {
-      val error = intercept[ParseException] {
-        sql(
-          s"""
-             |CREATE TEMPORARY TABLE t USING PARQUET
-             |OPTIONS (PATH '${path.toString}')
-             |PARTITIONED BY (a)
-             |AS SELECT 1 AS a, 2 AS b
-           """.stripMargin
-        )
-      }.getMessage
-      assert(error.contains("Operation not allowed") &&
-        error.contains("CREATE TEMPORARY TABLE ... USING ... AS query"))
-    }
-  }
+  test("it is not allowed to write to a table while querying it.") {
+    sql(
+      s"""
+        |CREATE TEMPORARY TABLE jsonTable
+        |USING json
+        |OPTIONS (
+        |  path '${path.toString}'
+        |) AS
+        |SELECT a, b FROM jt
+      """.stripMargin)
 
-  test("disallows CREATE EXTERNAL TABLE ... USING ... AS query") {
-    withTable("t") {
-      val error = intercept[ParseException] {
-        sql(
-          s"""
-             |CREATE EXTERNAL TABLE t USING PARQUET
-             |OPTIONS (PATH '${path.toString}')
-             |AS SELECT 1 AS a, 2 AS b
-           """.stripMargin
-        )
-      }.getMessage
-
-      assert(error.contains("Operation not allowed") &&
-        error.contains("CREATE EXTERNAL TABLE ... USING"))
-    }
-  }
-
-  test("create table using as select - with partitioned by") {
-    val catalog = spark.sessionState.catalog
-    withTable("t") {
+    val message = intercept[AnalysisException] {
       sql(
         s"""
-           |CREATE TABLE t USING PARQUET
-           |OPTIONS (PATH '${path.toString}')
-           |PARTITIONED BY (a)
-           |AS SELECT 1 AS a, 2 AS b
-         """.stripMargin
-      )
-      val table = catalog.getTableMetadata(TableIdentifier("t"))
-      assert(table.partitionColumnNames == Seq("a"))
-    }
-  }
-
-  test("create table using as select - with non-zero buckets") {
-    val catalog = spark.sessionState.catalog
-    withTable("t") {
-      sql(
-        s"""
-           |CREATE TABLE t USING PARQUET
-           |OPTIONS (PATH '${path.toString}')
-           |CLUSTERED BY (a) SORTED BY (b) INTO 5 BUCKETS
-           |AS SELECT 1 AS a, 2 AS b
-         """.stripMargin
-      )
-      val table = catalog.getTableMetadata(TableIdentifier("t"))
-      assert(table.bucketSpec == Option(BucketSpec(5, Seq("a"), Seq("b"))))
-    }
-  }
-
-  test("create table using as select - with zero buckets") {
-    withTable("t") {
-      val e = intercept[AnalysisException] {
-        sql(
-          s"""
-             |CREATE TABLE t USING PARQUET
-             |OPTIONS (PATH '${path.toString}')
-             |CLUSTERED BY (a) SORTED BY (b) INTO 0 BUCKETS
-             |AS SELECT 1 AS a, 2 AS b
-           """.stripMargin
-        )
-      }.getMessage
-      assert(e.contains("Expected positive number of buckets, but got `0`"))
-    }
+        |CREATE TEMPORARY TABLE jsonTable
+        |USING json
+        |OPTIONS (
+        |  path '${path.toString}'
+        |) AS
+        |SELECT a, b FROM jsonTable
+      """.stripMargin)
+    }.getMessage
+    assert(
+      message.contains("Cannot overwrite table "),
+      "Writing to a table while querying it should not be allowed.")
   }
 }

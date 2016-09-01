@@ -31,7 +31,7 @@ from pyspark.sql import SparkSession
 if __name__ == "__main__":
     spark = SparkSession\
         .builder\
-        .appName("DecisionTreeRegressionExample")\
+        .appName("decision_tree_classification_example")\
         .getOrCreate()
 
     # $example on$

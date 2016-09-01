@@ -21,10 +21,11 @@
   <parent>
     <groupId>org.apache.spark</groupId>
     <artifactId>spark-parent_2.11</artifactId>
-    <version>2.1.0-SNAPSHOT</version>
+    <version>2.0.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
+  <groupId>org.apache.spark</groupId>
   <artifactId>spark-mllib_2.11</artifactId>
   <properties>
     <sbt.project.name>mllib</sbt.project.name>
@@ -101,11 +102,15 @@
     <dependency>
       <groupId>org.jpmml</groupId>
       <artifactId>pmml-model</artifactId>
-      <version>1.2.15</version>
+      <version>1.2.7</version>
       <exclusions>
         <exclusion>
-          <groupId>org.jpmml</groupId>
-          <artifactId>pmml-agent</artifactId>
+          <groupId>com.sun.xml.fastinfoset</groupId>
+          <artifactId>FastInfoset</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.sun.istack</groupId>
+          <artifactId>istack-commons-runtime</artifactId>
         </exclusion>
       </exclusions>
     </dependency>

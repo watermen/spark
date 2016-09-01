@@ -19,6 +19,8 @@ package org.apache.spark.sql.execution.vectorized;
 import java.math.BigDecimal;
 import java.util.*;
 
+import org.apache.commons.lang.NotImplementedException;
+
 import org.apache.spark.memory.MemoryMode;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.expressions.GenericMutableRow;
@@ -164,7 +166,7 @@ public final class ColumnarBatch {
 
     @Override
     public boolean anyNull() {
-      throw new UnsupportedOperationException();
+      throw new NotImplementedException();
     }
 
     @Override
@@ -225,12 +227,12 @@ public final class ColumnarBatch {
 
     @Override
     public MapData getMap(int ordinal) {
-      throw new UnsupportedOperationException();
+      throw new NotImplementedException();
     }
 
     @Override
     public Object get(int ordinal, DataType dataType) {
-      throw new UnsupportedOperationException();
+      throw new NotImplementedException();
     }
 
     @Override
@@ -256,7 +258,7 @@ public final class ColumnarBatch {
           setDecimal(ordinal, Decimal.apply((BigDecimal) value, t.precision(), t.scale()),
               t.precision());
         } else {
-          throw new UnsupportedOperationException("Datatype not supported " + dt);
+          throw new NotImplementedException("Datatype not supported " + dt);
         }
       }
     }
@@ -428,7 +430,7 @@ public final class ColumnarBatch {
    */
   public void setColumn(int ordinal, ColumnVector column) {
     if (column instanceof OffHeapColumnVector) {
-      throw new UnsupportedOperationException("Need to ref count columns.");
+      throw new NotImplementedException("Need to ref count columns.");
     }
     columns[ordinal] = column;
   }

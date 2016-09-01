@@ -229,24 +229,20 @@ private[ui] class JobPage(parent: JobsTab) extends WebUIPage("job") {
         }
       }
 
-      val basePath = "jobs/job"
-
       val activeStagesTable =
-        new StageTableBase(request, activeStages, "activeStage", parent.basePath,
-          basePath, parent.jobProgresslistener, parent.isFairScheduler,
-          killEnabled = parent.killEnabled, isFailedStage = false)
+        new StageTableBase(activeStages.sortBy(_.submissionTime).reverse,
+          parent.basePath, parent.jobProgresslistener, isFairScheduler = parent.isFairScheduler,
+          killEnabled = parent.killEnabled)
       val pendingOrSkippedStagesTable =
-        new StageTableBase(request, pendingOrSkippedStages, "pendingStage", parent.basePath,
-          basePath, parent.jobProgresslistener, parent.isFairScheduler,
-          killEnabled = false, isFailedStage = false)
+        new StageTableBase(pendingOrSkippedStages.sortBy(_.stageId).reverse,
+          parent.basePath, parent.jobProgresslistener, isFairScheduler = parent.isFairScheduler,
+          killEnabled = false)
       val completedStagesTable =
-        new StageTableBase(request, completedStages, "completedStage", parent.basePath,
-          basePath, parent.jobProgresslistener, parent.isFairScheduler,
-          killEnabled = false, isFailedStage = false)
+        new StageTableBase(completedStages.sortBy(_.submissionTime).reverse, parent.basePath,
+          parent.jobProgresslistener, isFairScheduler = parent.isFairScheduler, killEnabled = false)
       val failedStagesTable =
-        new StageTableBase(request, failedStages, "failedStage", parent.basePath,
-          basePath, parent.jobProgresslistener, parent.isFairScheduler,
-          killEnabled = false, isFailedStage = true)
+        new FailedStageTable(failedStages.sortBy(_.submissionTime).reverse, parent.basePath,
+          parent.jobProgresslistener, isFairScheduler = parent.isFairScheduler)
 
       val shouldShowActiveStages = activeStages.nonEmpty
       val shouldShowPendingStages = !isComplete && pendingOrSkippedStages.nonEmpty

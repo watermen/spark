@@ -82,16 +82,16 @@ object BindReferences extends Logging {
 
   def bindReference[A <: Expression](
       expression: A,
-      input: AttributeSeq,
+      input: Seq[Attribute],
       allowFailures: Boolean = false): A = {
     expression.transform { case a: AttributeReference =>
       attachTree(a, "Binding attribute") {
-        val ordinal = input.indexOf(a.exprId)
+        val ordinal = input.indexWhere(_.exprId == a.exprId)
         if (ordinal == -1) {
           if (allowFailures) {
             a
           } else {
-            sys.error(s"Couldn't find $a in ${input.attrs.mkString("[", ",", "]")}")
+            sys.error(s"Couldn't find $a in ${input.mkString("[", ",", "]")}")
           }
         } else {
           BoundReference(ordinal, a.dataType, input(ordinal).nullable)

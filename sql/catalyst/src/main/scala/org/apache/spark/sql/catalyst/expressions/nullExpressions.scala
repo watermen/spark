@@ -134,7 +134,7 @@ case class Nvl(left: Expression, right: Expression) extends RuntimeReplaceable {
 
   override def replaceForTypeCoercion(): Expression = {
     if (left.dataType != right.dataType) {
-      TypeCoercion.findTightestCommonTypeToString(left.dataType, right.dataType).map { dtype =>
+      TypeCoercion.findTightestCommonTypeOfTwo(left.dataType, right.dataType).map { dtype =>
         copy(left = Cast(left, dtype), right = Cast(right, dtype))
       }.getOrElse(this)
     } else {

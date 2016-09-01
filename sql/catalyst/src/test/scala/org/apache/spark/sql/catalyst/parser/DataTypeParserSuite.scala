@@ -20,7 +20,7 @@ package org.apache.spark.sql.catalyst.parser
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql.types._
 
-class DataTypeParserSuite extends SparkFunSuite {
+class CatalystQlDataTypeParserSuite extends SparkFunSuite {
 
   def parse(sql: String): DataType = CatalystSqlParser.parseDataType(sql)
 
@@ -133,8 +133,4 @@ class DataTypeParserSuite extends SparkFunSuite {
   checkDataType(
     "struct<`x``y` int>",
     (new StructType).add("x`y", IntegerType))
-
-  // Use SQL keywords.
-  checkDataType("struct<end: long, select: int, from: string>",
-    (new StructType).add("end", LongType).add("select", IntegerType).add("from", StringType))
 }

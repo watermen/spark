@@ -1,7 +1,7 @@
 ---
 layout: global
-title: Isotonic regression - RDD-based API
-displayTitle: Regression - RDD-based API
+title: Isotonic regression - spark.mllib
+displayTitle: Regression - spark.mllib
 ---
 
 ## Isotonic regression

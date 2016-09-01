@@ -220,15 +220,9 @@ private[hive] class IsolatedClientLoader(
               logDebug(s"hive class: $name - ${getResource(classToPath(name))}")
               super.loadClass(name, resolve)
             } else {
-              // For shared classes, we delegate to baseClassLoader, but fall back in case the
-              // class is not found.
+              // For shared classes, we delegate to baseClassLoader.
               logDebug(s"shared class: $name")
-              try {
-                baseClassLoader.loadClass(name)
-              } catch {
-                case _: ClassNotFoundException =>
-                  super.loadClass(name, resolve)
-              }
+              baseClassLoader.loadClass(name)
             }
           }
         }
@@ -270,7 +264,7 @@ private[hive] class IsolatedClientLoader(
           throw new ClassNotFoundException(
             s"$cnf when creating Hive client using classpath: ${execJars.mkString(", ")}\n" +
             "Please make sure that jars for your version of hive and hadoop are included in the " +
-            s"paths passed to ${HiveUtils.HIVE_METASTORE_JARS.key}.", e)
+            s"paths passed to ${HiveUtils.HIVE_METASTORE_JARS}.", e)
         } else {
           throw e
         }

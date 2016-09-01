@@ -65,8 +65,8 @@ public class JavaLogisticRegressionWithLBFGSExample {
 
     // Get evaluation metrics.
     MulticlassMetrics metrics = new MulticlassMetrics(predictionAndLabels.rdd());
-    double accuracy = metrics.accuracy();
-    System.out.println("Accuracy = " + accuracy);
+    double precision = metrics.precision();
+    System.out.println("Precision = " + precision);
 
     // Save and load model
     model.save(sc, "target/tmp/javaLogisticRegressionWithLBFGSModel");

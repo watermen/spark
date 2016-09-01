@@ -155,7 +155,7 @@ private[spark] object SerializationDebugger extends Logging {
 
       // If the object has been replaced using writeReplace(),
       // then call visit() on it again to test its type again.
-      if (finalObj.getClass != o.getClass) {
+      if (!finalObj.eq(o)) {
         return visit(finalObj, s"writeReplace data (class: ${finalObj.getClass.getName})" :: stack)
       }
 
@@ -265,10 +265,11 @@ private[spark] object SerializationDebugger extends Logging {
     if (!desc.hasWriteReplaceMethod) {
       (o, desc)
     } else {
+      // write place
       val replaced = desc.invokeWriteReplace(o)
-      // `writeReplace` recursion stops when the returned object has the same class.
-      if (replaced.getClass == o.getClass) {
-        (replaced, desc)
+      // `writeReplace` may return the same object.
+      if (replaced eq o) {
+        (o, desc)
       } else {
         findObjectAndDescriptor(replaced)
       }

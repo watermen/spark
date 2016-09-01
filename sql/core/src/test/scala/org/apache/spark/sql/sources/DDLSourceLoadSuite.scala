@@ -17,7 +17,7 @@
 
 package org.apache.spark.sql.sources
 
-import org.apache.spark.sql.{AnalysisException, SQLContext}
+import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.test.SharedSQLContext
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 
@@ -27,25 +27,24 @@ class DDLSourceLoadSuite extends DataSourceTest with SharedSQLContext {
 
   test("data sources with the same name") {
     intercept[RuntimeException] {
-      spark.read.format("Fluet da Bomb").load()
+      caseInsensitiveContext.read.format("Fluet da Bomb").load()
     }
   }
 
   test("load data source from format alias") {
-    spark.read.format("gathering quorum").load().schema ==
+    caseInsensitiveContext.read.format("gathering quorum").load().schema ==
       StructType(Seq(StructField("stringType", StringType, nullable = false)))
   }
 
   test("specify full classname with duplicate formats") {
-    spark.read.format("org.apache.spark.sql.sources.FakeSourceOne")
+    caseInsensitiveContext.read.format("org.apache.spark.sql.sources.FakeSourceOne")
       .load().schema == StructType(Seq(StructField("stringType", StringType, nullable = false)))
   }
 
-  test("should fail to load ORC without Hive Support") {
-    val e = intercept[AnalysisException] {
-      spark.read.format("orc").load()
+  test("should fail to load ORC without HiveContext") {
+    intercept[ClassNotFoundException] {
+      caseInsensitiveContext.read.format("orc").load()
     }
-    assert(e.message.contains("The ORC data source must be used with Hive support enabled"))
   }
 }
 

@@ -104,8 +104,7 @@ sealed class Metadata private[types] (private[types] val map: Map[String, Any])
     }
   }
 
-  private lazy val _hashCode: Int = Metadata.hash(this)
-  override def hashCode: Int = _hashCode
+  override def hashCode: Int = Metadata.hash(this)
 
   private def get[T](key: String): T = {
     map(key).asInstanceOf[T]
@@ -116,10 +115,8 @@ sealed class Metadata private[types] (private[types] val map: Map[String, Any])
 
 object Metadata {
 
-  private[this] val _empty = new Metadata(Map.empty)
-
   /** Returns an empty Metadata. */
-  def empty: Metadata = _empty
+  def empty: Metadata = new Metadata(Map.empty)
 
   /** Creates a Metadata instance from JSON. */
   def fromJson(json: String): Metadata = {

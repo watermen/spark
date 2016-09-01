@@ -32,15 +32,17 @@ object SimpleSkewedGroupByTest {
       .appName("SimpleSkewedGroupByTest")
       .getOrCreate()
 
-    val numMappers = if (args.length > 0) args(0).toInt else 2
-    val numKVPairs = if (args.length > 1) args(1).toInt else 1000
-    val valSize = if (args.length > 2) args(2).toInt else 1000
-    val numReducers = if (args.length > 3) args(3).toInt else numMappers
-    val ratio = if (args.length > 4) args(4).toInt else 5.0
+    val sc = spark.sparkContext
 
-    val pairs1 = spark.sparkContext.parallelize(0 until numMappers, numMappers).flatMap { p =>
+    var numMappers = if (args.length > 0) args(0).toInt else 2
+    var numKVPairs = if (args.length > 1) args(1).toInt else 1000
+    var valSize = if (args.length > 2) args(2).toInt else 1000
+    var numReducers = if (args.length > 3) args(3).toInt else numMappers
+    var ratio = if (args.length > 4) args(4).toInt else 5.0
+
+    val pairs1 = sc.parallelize(0 until numMappers, numMappers).flatMap { p =>
       val ranGen = new Random
-      val result = new Array[(Int, Array[Byte])](numKVPairs)
+      var result = new Array[(Int, Array[Byte])](numKVPairs)
       for (i <- 0 until numKVPairs) {
         val byteArr = new Array[Byte](valSize)
         ranGen.nextBytes(byteArr)

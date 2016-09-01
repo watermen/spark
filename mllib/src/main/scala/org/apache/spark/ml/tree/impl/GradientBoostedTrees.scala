@@ -205,29 +205,31 @@ private[spark] object GradientBoostedTrees extends Logging {
       case _ => data
     }
 
-    val broadcastTrees = sc.broadcast(trees)
+    val numIterations = trees.length
+    val evaluationArray = Array.fill(numIterations)(0.0)
     val localTreeWeights = treeWeights
-    val treesIndices = trees.indices
 
-    val dataCount = remappedData.count()
-    val evaluation = remappedData.map { point =>
-      treesIndices.map { idx =>
-        val prediction = broadcastTrees.value(idx)
-          .rootNode
-          .predictImpl(point.features)
-          .prediction
-        prediction * localTreeWeights(idx)
+    var predictionAndError = computeInitialPredictionAndError(
+      remappedData, localTreeWeights(0), trees(0), loss)
+
+    evaluationArray(0) = predictionAndError.values.mean()
+
+    val broadcastTrees = sc.broadcast(trees)
+    (1 until numIterations).foreach { nTree =>
+      predictionAndError = remappedData.zip(predictionAndError).mapPartitions { iter =>
+        val currentTree = broadcastTrees.value(nTree)
+        val currentTreeWeight = localTreeWeights(nTree)
+        iter.map { case (point, (pred, error)) =>
+          val newPred = updatePrediction(point.features, pred, currentTree, currentTreeWeight)
+          val newError = loss.computeError(newPred, point.label)
+          (newPred, newError)
+        }
       }
-      .scanLeft(0.0)(_ + _).drop(1)
-      .map(prediction => loss.computeError(prediction, point.label))
+      evaluationArray(nTree) = predictionAndError.values.mean()
     }
-    .aggregate(treesIndices.map(_ => 0.0))(
-      (aggregated, row) => treesIndices.map(idx => aggregated(idx) + row(idx)),
-      (a, b) => treesIndices.map(idx => a(idx) + b(idx)))
-    .map(_ / dataCount)
 
-    broadcastTrees.destroy()
-    evaluation.toArray
+    broadcastTrees.unpersist()
+    evaluationArray
   }
 
   /**

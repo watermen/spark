@@ -155,7 +155,7 @@ pre {
   display: none;
 }
 
-span.expand-additional-metrics, span.expand-dag-viz, span.collapse-table {
+span.expand-additional-metrics, span.expand-dag-viz {
   cursor: pointer;
 }
 
@@ -163,7 +163,7 @@ span.additional-metric-title {
   cursor: pointer;
 }
 
-.additional-metrics.collapsed, .collapsible-table.collapsed {
+.additional-metrics.collapsed {
   display: none;
 }
 

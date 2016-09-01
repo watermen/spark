@@ -30,7 +30,7 @@ import org.apache.spark.mllib.linalg.Vector
 import org.apache.spark.mllib.pmml.PMMLExportable
 import org.apache.spark.mllib.util.{Loader, Saveable}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{Row, SQLContext}
 
 /**
  * A clustering model for K-means. Each point belongs to the cluster with the closest center.
@@ -123,24 +123,25 @@ object KMeansModel extends Loader[KMeansModel] {
     val thisClassName = "org.apache.spark.mllib.clustering.KMeansModel"
 
     def save(sc: SparkContext, model: KMeansModel, path: String): Unit = {
-      val spark = SparkSession.builder().sparkContext(sc).getOrCreate()
+      val sqlContext = SQLContext.getOrCreate(sc)
+      import sqlContext.implicits._
       val metadata = compact(render(
         ("class" -> thisClassName) ~ ("version" -> thisFormatVersion) ~ ("k" -> model.k)))
       sc.parallelize(Seq(metadata), 1).saveAsTextFile(Loader.metadataPath(path))
       val dataRDD = sc.parallelize(model.clusterCenters.zipWithIndex).map { case (point, id) =>
         Cluster(id, point)
-      }
-      spark.createDataFrame(dataRDD).write.parquet(Loader.dataPath(path))
+      }.toDF()
+      dataRDD.write.parquet(Loader.dataPath(path))
     }
 
     def load(sc: SparkContext, path: String): KMeansModel = {
       implicit val formats = DefaultFormats
-      val spark = SparkSession.builder().sparkContext(sc).getOrCreate()
+      val sqlContext = SQLContext.getOrCreate(sc)
       val (className, formatVersion, metadata) = Loader.loadMetadata(sc, path)
       assert(className == thisClassName)
       assert(formatVersion == thisFormatVersion)
       val k = (metadata \ "k").extract[Int]
-      val centroids = spark.read.parquet(Loader.dataPath(path))
+      val centroids = sqlContext.read.parquet(Loader.dataPath(path))
       Loader.checkSchema[Cluster](centroids.schema)
       val localCentroids = centroids.rdd.map(Cluster.apply).collect()
       assert(k == localCentroids.length)

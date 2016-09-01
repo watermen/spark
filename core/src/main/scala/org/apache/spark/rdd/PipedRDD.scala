@@ -47,9 +47,21 @@ private[spark] class PipedRDD[T: ClassTag](
     printPipeContext: (String => Unit) => Unit,
     printRDDElement: (T, String => Unit) => Unit,
     separateWorkingDir: Boolean,
-    bufferSize: Int,
-    encoding: String)
+    bufferSize: Int)
   extends RDD[String](prev) {
+
+  // Similar to Runtime.exec(), if we are given a single string, split it into words
+  // using a standard StringTokenizer (i.e. by spaces)
+  def this(
+      prev: RDD[T],
+      command: String,
+      envVars: Map[String, String] = Map(),
+      printPipeContext: (String => Unit) => Unit = null,
+      printRDDElement: (T, String => Unit) => Unit = null,
+      separateWorkingDir: Boolean = false) =
+    this(prev, PipedRDD.tokenize(command), envVars, printPipeContext, printRDDElement,
+      separateWorkingDir, 8192)
+
 
   override def getPartitions: Array[Partition] = firstParent[T].partitions
 
@@ -117,7 +129,7 @@ private[spark] class PipedRDD[T: ClassTag](
       override def run(): Unit = {
         val err = proc.getErrorStream
         try {
-          for (line <- Source.fromInputStream(err)(encoding).getLines) {
+          for (line <- Source.fromInputStream(err).getLines) {
             // scalastyle:off println
             System.err.println(line)
             // scalastyle:on println
@@ -135,7 +147,7 @@ private[spark] class PipedRDD[T: ClassTag](
       override def run(): Unit = {
         TaskContext.setTaskContext(context)
         val out = new PrintWriter(new BufferedWriter(
-          new OutputStreamWriter(proc.getOutputStream, encoding), bufferSize))
+          new OutputStreamWriter(proc.getOutputStream), bufferSize))
         try {
           // scalastyle:off println
           // input the pipe context firstly
@@ -159,7 +171,7 @@ private[spark] class PipedRDD[T: ClassTag](
     }.start()
 
     // Return an iterator that read lines from the process's stdout
-    val lines = Source.fromInputStream(proc.getInputStream)(encoding).getLines
+    val lines = Source.fromInputStream(proc.getInputStream).getLines()
     new Iterator[String] {
       def next(): String = {
         if (!hasNext()) {
